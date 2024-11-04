@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+* { box-sizing: border-box; }
+body { font-family: "IBM Plex Sans",sans-serif; background:#09090b; color:#f4f4f5; -webkit-font-smoothing:antialiased; }
+::-webkit-scrollbar { width:6px; height:6px; }
+::-webkit-scrollbar-track { background:#18181b; }
+::-webkit-scrollbar-thumb { background:#3f3f46; border-radius:3px; }
+.report-body h1,.report-body h2,.report-body h3 { font-family:"DM Mono",monospace; color:#b5f23d; margin:1.25rem 0 0.5rem; }
+.report-body h1 { font-size:1.25rem; border-bottom:1px solid #27272a; padding-bottom:.5rem; }
+.report-body p  { color:#d4d4d8; line-height:1.7; margin-bottom:.75rem; }
+.report-body ul { list-style:disc; padding-left:1.5rem; color:#d4d4d8; margin-bottom:.75rem; }
+.report-body li { margin-bottom:.3rem; }
+.report-body table { width:100%; border-collapse:collapse; margin-bottom:1rem; font-size:.85rem; }
+.report-body th { background:#18181b; color:#b5f23d; font-family:"DM Mono",monospace; padding:.5rem .75rem; text-align:left; font-size:.75rem; }
+.report-body td { padding:.4rem .75rem; border-bottom:1px solid #27272a; color:#d4d4d8; }
+.report-body code { background:#18181b; color:#b5f23d; padding:.1rem .4rem; border-radius:3px; font-family:"DM Mono",monospace; font-size:.85em; }
+.report-body pre  { background:#18181b; padding:1rem; border-radius:6px; overflow-x:auto; margin-bottom:1rem; }
+.report-body strong { color:#f4f4f5; font-weight:600; }
+.skeleton { background:linear-gradient(90deg,#18181b 25%,#27272a 50%,#18181b 75%); background-size:200% 100%; animation:shimmer 1.5s infinite; border-radius:4px; }
+@keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
