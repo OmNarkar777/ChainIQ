@@ -1,0 +1,12 @@
+SUPPLIER PROFILE: SUP_001 — Apex Electronics Ltd
+=========================================================
+Lead Time: 7-10 business days (standard), 3-4 days (express, +15% surcharge)
+Minimum Order Quantity (MOQ): 50 units per SKU
+Reliability Score: 94/100
+On-Time Delivery Rate: 96.2% (last 12 months)
+Payment Terms: Net-30
+Capacity Notes: Can handle peak demand surge up to 200% with 5-day notice.
+Preferred Categories: Electronics, Gadgets
+Discount Tiers: 5% at 200 units, 10% at 500 units, 15% at 1000 units
+Returns Policy: Accepts returns within 14 days for defective units only.
+Notes: Preferred partner for Q4 electronics surge. Book capacity by October 1.

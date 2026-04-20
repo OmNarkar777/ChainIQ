@@ -1,0 +1,12 @@
+SUPPLIER PROFILE: SUP_005 — SportZone Pro Supplies
+=========================================================
+Lead Time: 5-8 business days
+MOQ: 20 units per SKU
+Reliability Score: 91/100
+On-Time Delivery Rate: 93.4%
+Payment Terms: Net-30
+Capacity Notes: Cricket/badminton season (Mar-May, Oct-Nov) causes 2-week delays.
+Preferred Categories: Sports Equipment, Fitness, Outdoor
+Discount Tiers: 4% at 100 units, 9% at 300 units, 14% at 600 units
+Returns Policy: 30-day no-questions return for unused items with original packaging.
+Notes: Reliable for non-seasonal orders. Build 4-week buffer before cricket season.

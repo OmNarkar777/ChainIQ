@@ -1,0 +1,12 @@
+SUPPLIER PROFILE: SUP_002 — FashionForward Apparel
+=========================================================
+Lead Time: 14-21 days (standard), 7 days (express, +25% surcharge)
+MOQ: 100 units per style/colorway
+Reliability Score: 78/100
+On-Time Delivery Rate: 81.5% — NOTE: Frequent delays during festival season
+Payment Terms: 50% advance, 50% on delivery
+Capacity Notes: Seasonal constraints Oct-Dec. Place orders by Sep 15 for Diwali.
+Preferred Categories: Apparel, Accessories
+Discount Tiers: 8% at 300 units, 12% at 600 units
+Returns Policy: No returns on custom/seasonal items.
+Notes: High-variance supplier. Always maintain 3-week safety stock buffer.

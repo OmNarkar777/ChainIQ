@@ -1,0 +1,13 @@
+SUPPLIER PROFILE: SUP_003 — FreshMart FMCG Distributors
+=========================================================
+Lead Time: 2-3 business days (regional warehouse), 5-7 days (national)
+MOQ: 24 units per SKU (case packs)
+Reliability Score: 97/100
+On-Time Delivery Rate: 98.7% — Most reliable supplier in portfolio
+Payment Terms: Net-45
+Capacity Notes: No surge limitations. 24/7 emergency order line available.
+Preferred Categories: Grocery, FMCG, Personal Care
+Discount Tiers: 3% at 100 units, 6% at 500 units, 9% at 1000 units
+Returns Policy: Full credit for expired/damaged goods within 30 days.
+Notes: Use as default for Grocery SKUs. Can activate emergency replenishment
+within 24 hours for critical stockout risk.

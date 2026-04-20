@@ -1,0 +1,12 @@
+SUPPLIER PROFILE: SUP_004 — HomeStyle Imports Pvt Ltd
+=========================================================
+Lead Time: 21-35 days (imported goods), 7-10 days (domestic stock)
+MOQ: 30 units per SKU
+Reliability Score: 85/100
+On-Time Delivery Rate: 88.0%
+Payment Terms: LC (Letter of Credit) for imports, Net-30 for domestic
+Capacity Notes: Import shipments arrive 1st and 15th of each month.
+Preferred Categories: Home Decor, Furniture, Kitchenware
+Discount Tiers: 6% at 100 units, 11% at 250 units
+Returns Policy: Returns within 7 days of delivery, 20% restocking fee.
+Notes: Plan import orders minimum 45 days in advance. Domestic stock limited.
