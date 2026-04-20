@@ -75,3 +75,10 @@ def ingest_supplier_docs(docs_dir: str = "backend/data/supplier_docs") -> int:
         logger.info(f"Ingested {len(docs)} chunks from {docs_dir}")
 
     return len(docs)
+
+
+def collection_size() -> int:
+    try:
+        return get_collection().count()
+    except Exception:
+        return 0
