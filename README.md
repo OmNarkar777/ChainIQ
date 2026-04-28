@@ -130,5 +130,3 @@ chainiq/
 pytest tests/test_inventory_formulas.py -v   # 26 tests, no model or DB needed
 pytest tests/ -v
 ```
-````
-
