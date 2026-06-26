@@ -1,32 +1,32 @@
 version: "3.9"
-services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: chainiq
-      POSTGRES_PASSWORD: chainiq
-      POSTGRES_DB: chainiq
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U chainiq"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
 
+services:
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
     env_file: .env
-    depends_on:
-      postgres:
-        condition: service_healthy
     volumes:
       - ./model_store:/app/model_store
       - ./chroma_db:/app/chroma_db
+      - ./backend/data:/app/backend/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
-volumes:
-  pgdata:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      - VITE_API_URL=/api

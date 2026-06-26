@@ -37,7 +37,7 @@ POST /agent/analyze  (or GET /stream/analyze for real-time SSE)
 
 ## ML Pipeline Performance
 
-Trained on a 50-SKU synthetic dataset with 17,500 daily sales records (3 years), using a temporal train/test split (last 30 days as holdout) and 5-fold time-series cross-validation.
+Trained on a 50-SKU synthetic dataset with 18,250 daily sales records (50 SKUs × 365 days), using a temporal train/test split (last 30 days as holdout) and 5-fold time-series cross-validation.
 
 | Metric | XGBoost | Naive Baseline |
 |---|---|---|
