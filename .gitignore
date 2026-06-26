@@ -1,24 +1,46 @@
+# Python
 __pycache__/
 *.py[cod]
+*.pyo
 .venv/
 venv/
+env/
 .env
+*.egg-info/
+dist/
+build/
+
+# Data and generated assets
 backend/data/sample_data.csv
 model_store/*.json
 model_store/*.png
 chroma_db/
+
+# Frontend
 node_modules/
 frontend/dist/
+frontend/.env.local
+
+# Editor
 .vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
 .DS_Store
 Thumbs.db
+
+# Logs
 *.log
+
+# Test / coverage
 .pytest_cache/
 .coverage
+htmlcov/
+
+# Alembic generated migrations
 alembic/versions/*.py
-ChainIQ_Setup.ps1
-ChainIQ_Phase2.ps1
-ChainIQ_Phase3.ps1
-ChainIQ_Master.ps1
-ChainIQ_Patch.ps1
-git_history.ps1
+
+# PowerShell build scripts (development only)
+*.ps1

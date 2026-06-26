@@ -7,8 +7,14 @@ Events emitted as each agent completes:
   inventory_complete, rag_complete, report_complete, done
 """
 from __future__ import annotations
-import asyncio, json, time, uuid
+
+import asyncio
+import json
+import time
+import uuid
+from datetime import datetime
 from typing import AsyncIterator
+
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
@@ -16,17 +22,17 @@ router = APIRouter(prefix="/stream", tags=["stream"])
 
 
 async def _evt(type_: str, **kw) -> str:
-    return "data: " + json.dumps({"type": type_, "ts": int(time.time()*1000), **kw}) + "\n\n"
+    return "data: " + json.dumps({"type": type_, "ts": int(time.time() * 1000), **kw}) + "\n\n"
 
 
 async def _pipeline(sku_ids: list[str], include_rag: bool) -> AsyncIterator[str]:
-    run_id  = str(uuid.uuid4())
+    run_id = str(uuid.uuid4())
     started = time.time()
 
     yield await _evt("run_started", run_id=run_id, sku_count=len(sku_ids))
     await asyncio.sleep(0.05)
 
-    # Forecasting
+    # ── Forecasting ──────────────────────────────────────────────
     yield await _evt("forecasting_start", message="XGBoost demand forecasting", run_id=run_id)
     t0 = time.time()
     try:
@@ -40,15 +46,17 @@ async def _pipeline(sku_ids: list[str], include_rag: bool) -> AsyncIterator[str]
                 done_fc += 1
             except Exception:
                 pass
-        yield await _evt("forecasting_complete",
-                          skus_processed=done_fc,
-                          skus_failed=len(sku_ids)-done_fc,
-                          duration_ms=int((time.time()-t0)*1000))
+        yield await _evt(
+            "forecasting_complete",
+            skus_processed=done_fc,
+            skus_failed=len(sku_ids) - done_fc,
+            duration_ms=int((time.time() - t0) * 1000),
+        )
     except Exception as ex:
         yield await _evt("forecasting_error", error=str(ex))
     await asyncio.sleep(0.05)
 
-    # Inventory
+    # ── Inventory ────────────────────────────────────────────────
     t0 = time.time()
     try:
         import pandas as pd
@@ -56,72 +64,113 @@ async def _pipeline(sku_ids: list[str], include_rag: bool) -> AsyncIterator[str]
             calc_safety_stock, calc_reorder_point,
             calc_days_until_stockout, classify_urgency,
         )
-        df  = pd.read_csv("backend/data/sample_data.csv", parse_dates=["date"])
+        df = pd.read_csv("backend/data/sample_data.csv", parse_dates=["date"])
         lat = df.sort_values("date").groupby("sku_id").last().reset_index()
         cut = df["date"].max() - pd.Timedelta(days=30)
-        st  = df[df["date"] >= cut].groupby("sku_id")["units_sold"].agg(
-                  avg_daily="mean", std_daily="std").fillna(0)
-        mg  = lat.set_index("sku_id").join(st)
+        st = df[df["date"] >= cut].groupby("sku_id")["units_sold"].agg(
+            avg_daily="mean", std_daily="std"
+        ).fillna(0)
+        mg = lat.set_index("sku_id").join(st)
         crit = hi = 0
         for sid in sku_ids:
-            if sid not in mg.index: continue
-            r   = mg.loc[sid]
+            if sid not in mg.index:
+                continue
+            r = mg.loc[sid]
             avg = float(r.get("avg_daily", 10))
-            std = float(r.get("std_daily", avg*0.2))
-            lt  = int(r.get("lead_time_days", 7))
+            std = float(r.get("std_daily", avg * 0.2))
+            lt = int(r.get("lead_time_days", 7))
             stk = float(r.get("stock_level", 0))
-            ss  = calc_safety_stock(std, lt)
+            ss = calc_safety_stock(std, lt)
             rop = calc_reorder_point(avg, lt, ss)
             dus = calc_days_until_stockout(stk, avg)
             urg = classify_urgency(dus, lt, stk, rop)
-            if urg == "CRITICAL": crit += 1
-            elif urg == "HIGH":   hi   += 1
-        yield await _evt("inventory_complete",
-                          critical=crit, high=hi,
-                          duration_ms=int((time.time()-t0)*1000))
+            if urg == "CRITICAL":
+                crit += 1
+            elif urg == "HIGH":
+                hi += 1
+        yield await _evt(
+            "inventory_complete",
+            critical=crit,
+            high=hi,
+            duration_ms=int((time.time() - t0) * 1000),
+        )
     except Exception as ex:
         yield await _evt("inventory_error", error=str(ex))
     await asyncio.sleep(0.05)
 
-    # RAG
+    # ── RAG ──────────────────────────────────────────────────────
     if include_rag:
         t0 = time.time()
         try:
             from backend.rag.vectorstore import collection_size
             n = collection_size()
             await asyncio.sleep(0.1)
-            yield await _evt("rag_complete", chunks=n,
-                              duration_ms=int((time.time()-t0)*1000))
+            yield await _evt("rag_complete", chunks=n, duration_ms=int((time.time() - t0) * 1000))
         except Exception as ex:
             yield await _evt("rag_error", error=str(ex))
         await asyncio.sleep(0.05)
 
-    # Full pipeline via LangGraph
+    # ── Full LangGraph pipeline (report generation) ───────────────
     t0 = time.time()
     try:
         from backend.agents.graph import chain_graph
-        from backend.services.chain_service import _build_initial_state
-        state  = _build_initial_state(run_id, sku_ids, "batch", include_rag)
-        config = {"configurable": {"thread_id": run_id}}
-        final  = await chain_graph.ainvoke(state, config=config)
-        yield await _evt("report_complete",
-                          run_id=run_id,
-                          skus_analyzed=final.get("total_skus", len(sku_ids)),
-                          critical=final.get("critical_count", 0),
-                          duration_ms=int((time.time()-t0)*1000))
+        from backend.agents.state import ChainIQState
+        from backend.schemas import AgentRunResponse, InventoryRecommendationResponse
+        from backend.store import _run_cache
+
+        initial_state: ChainIQState = {
+            "run_id": run_id,
+            "sku_ids": sku_ids,
+            "include_rag_context": include_rag,
+            "forecast_results": [],
+            "forecast_error": None,
+            "inventory_recommendations": [],
+            "inventory_error": None,
+            "supplier_context": {},
+            "rag_error": None,
+            "report_text": None,
+            "report_error": None,
+            "status": "RUNNING",
+            "skus_analyzed": 0,
+            "errors": [],
+        }
+
+        loop = asyncio.get_event_loop()
+        final = await loop.run_in_executor(None, chain_graph.invoke, initial_state)
+
+        recs = [InventoryRecommendationResponse(**r) for r in final["inventory_recommendations"]]
+        result = AgentRunResponse(
+            run_id=run_id,
+            status=final["status"],
+            skus_analyzed=final["skus_analyzed"],
+            report_text=final.get("report_text"),
+            recommendations=recs,
+            created_at=datetime.utcnow(),
+            completed_at=datetime.utcnow(),
+        )
+        _run_cache[run_id] = result
+
+        critical_count = sum(
+            1 for r in final["inventory_recommendations"] if r["reorder_urgency"] == "CRITICAL"
+        )
+        yield await _evt(
+            "report_complete",
+            run_id=run_id,
+            skus_analyzed=final.get("skus_analyzed", len(sku_ids)),
+            critical=critical_count,
+            duration_ms=int((time.time() - t0) * 1000),
+        )
     except Exception as ex:
         yield await _evt("report_error", error=str(ex))
 
-    yield await _evt("done", run_id=run_id,
-                      total_ms=int((time.time()-started)*1000))
+    yield await _evt("done", run_id=run_id, total_ms=int((time.time() - started) * 1000))
 
 
 @router.get("/analyze")
 async def stream_analyze(
-    sku_ids:     str  = "",
+    sku_ids: str = "",
     analyze_all: bool = False,
     include_rag: bool = True,
-    mode:        str  = "batch",
 ):
     if analyze_all or not sku_ids:
         import pandas as pd
