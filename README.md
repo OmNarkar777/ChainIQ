@@ -1,6 +1,12 @@
 # ChainIQ — Supply Chain Intelligence System
 
-> Production-grade multi-agent AI system for demand forecasting and inventory optimization.
+> Production-grade multi-agent AI that tells operations managers what to order, how much, and when.
+
+[![Python](https://img.shields.io/badge/Python-3.11-blue)](https://python.org)
+[![XGBoost](https://img.shields.io/badge/XGBoost-2.0-orange)](https://xgboost.readthedocs.io)
+[![LangGraph](https://img.shields.io/badge/LangGraph-0.2-purple)](https://langchain-ai.github.io/langgraph/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.111-green)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/React-18-61dafb)](https://react.dev)
 
 ChainIQ combines XGBoost machine learning, LangGraph multi-agent orchestration, ChromaDB retrieval-augmented generation, and a Groq LLM to deliver actionable supply chain intelligence — forecasting demand, computing optimal reorder quantities, retrieving supplier context, and generating executive reports, all in a single pipeline.
 
@@ -289,6 +295,18 @@ Where D = annual demand, S = ordering cost ($500), H = holding cost rate (20% ×
 | HIGH | days_until_stockout < lead_time × 1.5 |
 | MEDIUM | current_stock < reorder_point |
 | LOW | otherwise |
+
+---
+
+## Technical Decisions
+
+**XGBoost over LSTM / Prophet.** Benchmarked all three. XGBoost trains in 2.7s on the full dataset, handles cross-SKU tabular features natively (category, supplier, price), and produces interpretable feature importance — `rolling_mean_14` and `ewm_7` dominate, validating the lag-feature design. Prophet's additive model couldn't capture the non-linear interaction between promotional flags and demand spikes that drives the most variance in this dataset.
+
+**LangGraph over CrewAI.** ChainIQ has a deterministic pipeline with a hard conditional edge — skip RAG entirely if no CRITICAL/HIGH SKUs exist. LangGraph models this exactly: typed `ChainIQState`, first-class conditional routing, and compile-time graph validation. CrewAI optimises for open-ended conversational agent loops, not for typed ETL-style pipelines with measurable intermediate outputs.
+
+**Safety stock formula.** Used `Z × σ × √LT` (normal demand during lead time) rather than simpler fixed-buffer approaches. Z = 1.645 targets 95% service level — the standard operations management threshold. EOQ minimises total inventory cost by equating marginal order cost and holding cost saved. Both formulas are auditable by an operations manager without ML knowledge, which is essential for real-world adoption.
+
+**CSV + in-memory store over PostgreSQL.** The application intentionally avoids a database dependency. All data reads from a CSV file; analysis runs are stored in a process-level dict. This means zero infrastructure overhead, instant local startup, and full portability. For production persistence, `backend/store.py` is the only replacement surface needed.
 
 ---
 
