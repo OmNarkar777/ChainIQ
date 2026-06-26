@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+
+      - name: Generate synthetic data
+        run: python ml_training/train.py --generate
+
+      - name: Train XGBoost model
+        run: python ml_training/train.py
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t chainiq-api:ci .
+
+      - name: Verify API starts
+        run: |
+          docker run -d --name chainiq-test -p 8000:8000 \
+            -e GROQ_API_KEY="" \
+            chainiq-api:ci
+          sleep 8
+          curl -f http://localhost:8000/health | python3 -m json.tool
+          docker stop chainiq-test

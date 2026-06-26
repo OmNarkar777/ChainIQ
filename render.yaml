@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: chainiq-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false          # set this secret in the Render dashboard
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: CHROMA_PERSIST_DIR
+        value: ./chroma_db
+      - key: MODEL_STORE_DIR
+        value: ./model_store
+      - key: APP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: CORS_ORIGINS
+        value: "*"

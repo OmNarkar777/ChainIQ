@@ -1,0 +1,29 @@
+.git
+.venv
+venv
+env
+__pycache__
+*.py[cod]
+*.pyo
+
+# Frontend build artifacts (not needed in backend image)
+frontend/node_modules
+frontend/dist
+
+# Editor
+.vscode
+.idea
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs and test artifacts
+*.log
+.pytest_cache
+.coverage
+htmlcov
+
+# Keep model_store, chroma_db, and data if they exist locally
+# (Dockerfile will generate them at build time if absent)
