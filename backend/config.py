@@ -11,9 +11,11 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     cors_origins: str = "*"
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    model_config = {
+        "env_file": ".env",
+        "extra": "ignore",
+        "protected_namespaces": ("settings_",),
+    }
 
 
 @lru_cache()

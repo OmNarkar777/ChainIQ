@@ -41,6 +41,8 @@ class ForecastRequest(BaseModel):
 
 
 class PredictionResult(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
     sku_id: str
     predicted_units: float
     lower_bound: float
@@ -52,6 +54,8 @@ class PredictionResult(BaseModel):
 
 
 class ForecastResponse(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
     results: List[PredictionResult]
     run_id: str
     model_version: str

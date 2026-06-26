@@ -6,6 +6,8 @@ router = APIRouter(prefix="/health", tags=["health"])
 
 
 class ComponentStatus(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
     model_loaded: bool
     chroma_chunks: int
     data_rows: Optional[int] = None
