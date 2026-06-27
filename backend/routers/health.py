@@ -1,57 +1,32 @@
+"""
+Lightweight health check — responds in < 5ms, zero heavy imports.
+Only checks filesystem artifacts baked in at Docker build time.
+"""
+from pathlib import Path
 from fastapi import APIRouter
-from pydantic import BaseModel
-from typing import Optional
 
 router = APIRouter(prefix="/health", tags=["health"])
 
-
-class ComponentStatus(BaseModel):
-    model_config = {"protected_namespaces": ()}
-
-    model_loaded: bool
-    chroma_chunks: int
-    data_rows: Optional[int] = None
+_MODEL_STORE = Path("model_store")
+_CHROMA_DIR  = Path("chroma_db")
+_DATA_FILE   = Path("backend/data/sample_data.csv")
 
 
-class HealthResponse(BaseModel):
-    status: str
-    service: str
-    version: str
-    components: Optional[ComponentStatus] = None
-
-
-@router.get("", response_model=HealthResponse)
+@router.get("")
 async def health():
-    model_ok = False
-    chroma_chunks = 0
-    data_rows = None
+    models    = [m for m in _MODEL_STORE.glob("xgb_v*.json") if "_meta" not in m.name] \
+                if _MODEL_STORE.exists() else []
+    model_ok  = bool(models)
+    chroma_ok = _CHROMA_DIR.exists() and any(_CHROMA_DIR.iterdir())
+    data_ok   = _DATA_FILE.exists()
 
-    try:
-        from backend.ml.model_store import get_latest_version
-        model_ok = get_latest_version() is not None
-    except Exception:
-        pass
-
-    try:
-        from backend.rag.vectorstore import collection_size
-        chroma_chunks = collection_size()
-    except Exception:
-        pass
-
-    try:
-        import pandas as pd
-        df = pd.read_csv("backend/data/sample_data.csv")
-        data_rows = len(df)
-    except Exception:
-        pass
-
-    return HealthResponse(
-        status="ok",
-        service="chainiq-api",
-        version="2.0.0",
-        components=ComponentStatus(
-            model_loaded=model_ok,
-            chroma_chunks=chroma_chunks,
-            data_rows=data_rows,
-        ),
-    )
+    return {
+        "status":  "ok",
+        "service": "chainiq-api",
+        "version": "2.0.0",
+        "components": {
+            "model_loaded":  model_ok,
+            "chroma_ready":  chroma_ok,
+            "data_ready":    data_ok,
+        },
+    }

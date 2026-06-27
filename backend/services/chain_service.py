@@ -2,13 +2,12 @@
 ChainService: orchestrates the full analysis pipeline.
 Entry point called by API routers.
 """
-
+import asyncio
 import uuid
 import logging
 from datetime import datetime
 from typing import List, Optional
 
-from backend.agents.graph import chain_graph
 from backend.agents.state import ChainIQState
 from backend.schemas import AgentRunResponse, InventoryRecommendationResponse
 
@@ -16,10 +15,13 @@ logger = logging.getLogger(__name__)
 
 
 def _get_all_sku_ids() -> List[str]:
-    """Read SKU IDs from the sample dataset."""
-    import pandas as pd
-    df = pd.read_csv("backend/data/sample_data.csv")
-    return df["sku_id"].unique().tolist()
+    from backend.routers.inventory import _get_df
+    return _get_df()["sku_id"].unique().tolist()
+
+
+def _run_pipeline(initial_state: ChainIQState) -> dict:
+    from backend.agents.graph import get_chain_graph
+    return get_chain_graph().invoke(initial_state)
 
 
 async def run_analysis(
@@ -34,23 +36,24 @@ async def run_analysis(
         sku_ids = _get_all_sku_ids()
 
     initial_state: ChainIQState = {
-        "run_id": run_id,
-        "sku_ids": sku_ids,
-        "include_rag_context": include_rag_context,
-        "forecast_results": [],
-        "forecast_error": None,
+        "run_id":                  run_id,
+        "sku_ids":                 sku_ids,
+        "include_rag_context":     include_rag_context,
+        "forecast_results":        [],
+        "forecast_error":          None,
         "inventory_recommendations": [],
-        "inventory_error": None,
-        "supplier_context": {},
-        "rag_error": None,
-        "report_text": None,
-        "report_error": None,
-        "status": "RUNNING",
-        "skus_analyzed": 0,
-        "errors": [],
+        "inventory_error":         None,
+        "supplier_context":        {},
+        "rag_error":               None,
+        "report_text":             None,
+        "report_error":            None,
+        "status":                  "RUNNING",
+        "skus_analyzed":           0,
+        "errors":                  [],
     }
 
-    final_state = chain_graph.invoke(initial_state)
+    loop = asyncio.get_event_loop()
+    final_state = await loop.run_in_executor(None, _run_pipeline, initial_state)
 
     recs = [
         InventoryRecommendationResponse(**r)
