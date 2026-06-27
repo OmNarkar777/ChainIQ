@@ -238,6 +238,233 @@ Covers: safety stock formula, reorder point, EOQ, days-until-stockout, stockout 
 
 ---
 
+## Deployment
+
+### 1. Local Development
+
+**Prerequisites:** Python 3.11+, Node.js 18+
+
+```bash
+# Clone
+git clone https://github.com/OmNarkar777/ChainIQ.git
+cd ChainIQ
+
+# Backend
+pip install -r requirements.txt
+cp .env.example .env
+# Optional: add your GROQ_API_KEY to .env for AI reports
+
+# Generate data + train model (runs once, ~5s)
+python ml_training/train.py --generate
+
+# Start API
+uvicorn backend.main:app --reload
+# → http://localhost:8000
+# → http://localhost:8000/docs  (Swagger UI)
+
+# Frontend (separate terminal)
+cd frontend
+npm install
+npm run dev
+# → http://localhost:3000
+```
+
+The Vite dev server automatically proxies `/api/*` → `http://localhost:8000` (see `vite.config.js`), so no `VITE_API_URL` is needed locally.
+
+---
+
+### 2. Docker (Full Stack)
+
+```bash
+cp .env.example .env
+# Add GROQ_API_KEY to .env if desired
+
+docker-compose up --build
+```
+
+- API: `http://localhost:8000`
+- Frontend: `http://localhost:80`
+
+The Docker image generates synthetic data, trains the XGBoost model, and pre-populates ChromaDB on first build (~3–5 minutes). Subsequent builds use Docker layer cache and are instant.
+
+To run the backend only:
+
+```bash
+docker build -t chainiq-api .
+docker run -p 8000:8000 --env-file .env chainiq-api
+```
+
+---
+
+### 3. Render — Backend Deployment
+
+The backend deploys as a Docker container on Render. The `render.yaml` IaC file handles all service configuration automatically.
+
+**Steps:**
+
+1. Push your repository to GitHub (already done if you forked this repo).
+2. Go to [render.com](https://render.com) → **New** → **Web Service**.
+3. Connect your GitHub account and select the `ChainIQ` repository.
+4. Render detects `render.yaml` and pre-fills all settings. Click **Apply**.
+5. In **Environment** → **Secret Files / Environment Variables**, add:
+   - `GROQ_API_KEY` = your key from [console.groq.com](https://console.groq.com) (free tier available)
+6. Click **Deploy**.
+
+The first deploy takes **5–10 minutes** (installs Python deps, generates data, trains XGBoost, downloads the `all-MiniLM-L6-v2` embedding model, pre-ingests ChromaDB). Subsequent deploys reuse Docker layer cache and take ~2 minutes.
+
+**After deployment:**
+
+```bash
+# Verify the API is healthy
+curl https://chainiq-api.onrender.com/health
+# Expected: {"status":"ok","version":"2.0.0","components":{"model_loaded":true,"chroma_chunks":...}}
+
+# View Swagger docs
+open https://chainiq-api.onrender.com/docs
+```
+
+> **Free tier note:** Render's free plan spins down after 15 minutes of inactivity. The first request after idle takes ~30 seconds for cold start. The $7/month Starter plan keeps the service always-on.
+
+---
+
+### 4. Vercel — Frontend Deployment
+
+**Steps:**
+
+1. Go to [vercel.com](https://vercel.com) → **Add New Project** → **Import Git Repository**.
+2. Select `OmNarkar777/ChainIQ`.
+3. Set **Root Directory** to `frontend`.
+4. Under **Environment Variables**, add:
+   - `VITE_API_URL` = `https://chainiq-api.onrender.com` (your Render service URL from step 3)
+5. Click **Deploy**.
+
+Vercel auto-detects `vercel.json` in the `frontend/` directory and configures SPA routing.
+
+**After deployment:**
+
+```
+https://your-project.vercel.app           → Dashboard
+https://your-project.vercel.app/inventory → Inventory table
+https://your-project.vercel.app/analysis  → Run pipeline
+https://your-project.vercel.app/forecast  → Demand forecast
+```
+
+---
+
+### 5. Environment Variables Reference
+
+#### Backend (`.env` / Render dashboard)
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `GROQ_API_KEY` | Optional* | `""` | Groq API key. Without it, reports use a fallback template. |
+| `GROQ_MODEL` | Optional | `llama-3.3-70b-versatile` | Groq model for report generation |
+| `CHROMA_PERSIST_DIR` | Optional | `./chroma_db` | ChromaDB persistence directory |
+| `MODEL_STORE_DIR` | Optional | `./model_store` | XGBoost model directory |
+| `APP_ENV` | Optional | `development` | `development` or `production` |
+| `LOG_LEVEL` | Optional | `INFO` | Log verbosity: DEBUG / INFO / WARNING / ERROR |
+| `CORS_ORIGINS` | Optional | `*` | Comma-separated allowed origins. Set to your Vercel URL in production. |
+
+*`GROQ_API_KEY` is strongly recommended for full functionality. Get one free at [console.groq.com](https://console.groq.com).
+
+#### Frontend (Vercel dashboard)
+
+| Variable | Required | Description |
+|---|---|---|
+| `VITE_API_URL` | **Yes** (Vercel/standalone Docker only) | Full URL of the backend API. Example: `https://chainiq-api.onrender.com`. Not needed for local dev (Vite proxy handles it) or docker-compose (nginx proxy handles it). |
+
+---
+
+### 6. Post-Deployment Verification Checklist
+
+After deploying both backend and frontend, verify the following:
+
+```bash
+# 1. Health endpoint returns 200 with all components healthy
+curl https://chainiq-api.onrender.com/health
+# model_loaded should be true, chroma_chunks > 0, data_rows = 18250
+
+# 2. Swagger UI is accessible
+open https://chainiq-api.onrender.com/docs
+
+# 3. Inventory endpoint returns data
+curl https://chainiq-api.onrender.com/inventory/summary
+
+# 4. Forecast endpoint works
+curl "https://chainiq-api.onrender.com/forecast/sku/SKU_0001?horizon_days=7"
+
+# 5. Frontend loads and shows data on Dashboard
+open https://your-project.vercel.app
+
+# 6. Analysis page can run the full pipeline
+# Navigate to /analysis → select SKUs → click Run Analysis
+# All 4 steps (Forecast → Inventory → RAG → Report) should complete
+```
+
+---
+
+### 7. Troubleshooting
+
+**`model_loaded: false` in health check**
+The Docker build generates and trains the model. If the build completed without errors, this should never happen. Check Render build logs for `[build] Model trained and saved.`
+
+**`chroma_chunks: 0` in health check**
+ChromaDB was not pre-populated. Check Render build logs for `[build] RAG: ingested N supplier doc chunks`. The app will attempt re-ingestion at startup automatically.
+
+**Report step produces template output instead of AI report**
+`GROQ_API_KEY` is missing or invalid. Set it in the Render dashboard under Environment Variables. The key must start with `gsk_`.
+
+**Frontend shows "Failed to fetch" or CORS errors**
+1. Verify `VITE_API_URL` in Vercel matches your exact Render service URL (no trailing slash).
+2. Update `CORS_ORIGINS` in Render to include your Vercel URL:
+   `CORS_ORIGINS=https://your-project.vercel.app`
+3. Redeploy the Render service after changing env vars.
+
+**Render cold-start timeout (30s delay on first request)**
+This is expected on the free tier. Upgrade to Render Starter ($7/mo) for always-on service, or configure a cron job to ping `/health` every 10 minutes.
+
+**`npm install --frozen-lockfile` fails in Docker**
+The `package-lock.json` in `frontend/` must be committed. Verify with `git ls-files frontend/package-lock.json`.
+
+**SSE stream disconnects immediately**
+Vercel has a 25-second function timeout. SSE streaming requires a persistent connection — always point SSE requests at the Render backend directly (already the case since `VITE_API_URL` points to Render).
+
+---
+
+## Render Deployment Checklist
+
+- [ ] Repository pushed to GitHub
+- [ ] Render account connected to GitHub
+- [ ] Web Service created with **Docker** runtime
+- [ ] `render.yaml` detected and applied (service name: `chainiq-api`)
+- [ ] `GROQ_API_KEY` set as a secret environment variable in Render dashboard
+- [ ] `CORS_ORIGINS` updated to Vercel frontend URL after it is known
+- [ ] First deploy completed (~5–10 min for initial build)
+- [ ] `GET /health` returns `{"status":"ok","components":{"model_loaded":true,...}}`
+- [ ] `GET /docs` loads Swagger UI
+- [ ] `POST /agent/analyze` with `{"analyze_all":true}` returns a run result
+- [ ] Render service URL noted for Vercel `VITE_API_URL`
+
+---
+
+## Vercel Deployment Checklist
+
+- [ ] Vercel account connected to GitHub
+- [ ] Project imported from `OmNarkar777/ChainIQ`
+- [ ] **Root Directory** set to `frontend`
+- [ ] **Build Command**: `npm run build` (auto-detected)
+- [ ] **Output Directory**: `dist` (auto-detected)
+- [ ] **Framework Preset**: Vite (auto-detected)
+- [ ] Environment variable `VITE_API_URL` set to `https://chainiq-api.onrender.com`
+- [ ] First deploy completed
+- [ ] Dashboard loads and shows inventory KPIs
+- [ ] `/analysis` page can run the full 4-step pipeline
+- [ ] `/forecast` page shows the chart for `SKU_0001`
+- [ ] Browser network tab shows API calls going to Render (not localhost)
+- [ ] No CORS errors in browser console
+
+---
+
 ## Docker Deployment
 
 ```bash
@@ -255,7 +482,7 @@ The `docker-compose.yml` includes both the FastAPI backend and a nginx container
 
 ## Configuration
 
-All settings are read from `.env` (see `.env.example`):
+All backend settings are read from `.env` (see `.env.example`):
 
 | Variable | Default | Description |
 |---|---|---|

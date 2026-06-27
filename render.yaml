@@ -19,4 +19,7 @@ services:
       - key: LOG_LEVEL
         value: INFO
       - key: CORS_ORIGINS
+        # After deploying your frontend, update this to your Vercel/Netlify URL.
+        # Example: https://chainiq.vercel.app
+        # Use * only during initial setup or if the frontend is on the same domain.
         value: "*"

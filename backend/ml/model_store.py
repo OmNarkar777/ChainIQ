@@ -3,12 +3,13 @@ Model versioning: save, load, list XGBoost models.
 """
 
 import json
+import os
 from pathlib import Path
 from typing import Optional
 import xgboost as xgb
 
 
-MODEL_STORE = Path("model_store")
+MODEL_STORE = Path(os.environ.get("MODEL_STORE_DIR", "model_store"))
 
 
 def get_latest_version() -> Optional[str]:
