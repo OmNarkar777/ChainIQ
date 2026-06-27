@@ -51,6 +51,7 @@ class PredictionResult(BaseModel):
     horizon_days: int
     model_version: str
     top_features: List[dict]
+    mape_estimate: Optional[float] = None
 
 
 class ForecastResponse(BaseModel):

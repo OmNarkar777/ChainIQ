@@ -26,6 +26,7 @@ def _to_schema(r) -> PredictionResult:
         horizon_days=r.horizon_days,
         model_version=r.model_version,
         top_features=r.top_features,
+        mape_estimate=getattr(r, "mape_estimate", None),
     )
 
 

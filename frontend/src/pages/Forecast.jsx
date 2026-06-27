@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { api } from "../api/client.js";
 import ForecastChart from "../components/ForecastChart.jsx";
 import UrgencyBadge from "../components/UrgencyBadge.jsx";
-import { Search, TrendingUp } from "lucide-react";
+import { Search, TrendingUp, AlertCircle, ExternalLink } from "lucide-react";
 
 function Stat({ label, value, sub, highlight = false }) {
   return (
@@ -87,8 +87,17 @@ export default function Forecast() {
       </form>
 
       {error && (
-        <div className="bg-red-950/50 border border-red-800 rounded-lg p-4 mb-6 font-mono text-sm text-red-400">
-          {error}
+        <div className="bg-red-950/50 border border-red-800 rounded-lg p-4 mb-6 flex items-start gap-3">
+          <AlertCircle size={14} className="text-red-400 mt-0.5 shrink-0" />
+          <div>
+            <p className="font-mono text-sm text-red-400">{error}</p>
+            {error.includes("VITE_API_URL") && (
+              <p className="text-xs text-red-500 mt-1">
+                Go to Vercel → Project → Settings → Environment Variables,
+                add <code className="bg-red-900/40 px-1 rounded">VITE_API_URL</code> = your Render URL, then redeploy.
+              </p>
+            )}
+          </div>
         </div>
       )}
 

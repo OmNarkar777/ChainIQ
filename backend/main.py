@@ -15,23 +15,29 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("ChainIQ API starting up...")
+    logger.info("ChainIQ API v2.0.0 starting up...")
+
+    # Pre-warm the forecast predictor using the same global singleton that
+    # /forecast routes use — first HTTP request won't pay the model-load cost.
     try:
-        from backend.ml.predictor import DemandPredictor
-        p = DemandPredictor()
-        p.load_model()
+        from backend.routers.forecast import get_predictor
+        p = get_predictor()
         logger.info(f"XGBoost model v{p.version} loaded")
     except Exception as exc:
         logger.warning(f"Model warm-up skipped: {exc}")
+
+    # Ensure ChromaDB is populated (no-op when Dockerfile pre-ingested at build time).
     try:
         from backend.rag.vectorstore import ingest_supplier_docs, collection_size
-        if collection_size() == 0:
+        n = collection_size()
+        if n == 0:
             n = ingest_supplier_docs()
             logger.info(f"RAG: ingested {n} supplier doc chunks")
         else:
-            logger.info(f"RAG: ChromaDB already has {collection_size()} chunks")
+            logger.info(f"RAG: ChromaDB ready ({n} chunks)")
     except Exception as exc:
-        logger.warning(f"RAG ingestion skipped: {exc}")
+        logger.warning(f"RAG warm-up skipped: {exc}")
+
     yield
     logger.info("ChainIQ API shutting down.")
 
