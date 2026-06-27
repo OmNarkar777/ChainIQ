@@ -101,7 +101,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-xl font-mono font-semibold">Operations Dashboard</h1>
           <p className="text-xs text-zinc-600 mt-0.5">
-            Refreshed {ts.toLocaleTimeString()} · synthetic 50-SKU dataset
+            Refreshed {ts.toLocaleTimeString()} · 300-SKU multi-category enterprise dataset
           </p>
         </div>
         <button
@@ -174,7 +174,7 @@ export default function Dashboard() {
             <div>
               <p className="text-sm font-mono text-zinc-300">30-Day Demand Trend</p>
               <p className="text-xs text-zinc-600 mt-0.5">
-                Aggregate daily units sold across all 50 SKUs
+                Aggregate daily units sold across all 300 SKUs
               </p>
             </div>
             <Activity size={14} className="text-zinc-600" />

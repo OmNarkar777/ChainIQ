@@ -1,0 +1,28 @@
+SUPPLIER PROFILE: SUP_008 — PlayWorld Toys & Games
+===================================================
+OVERVIEW
+PlayWorld Toys & Games supplies the full Toys & Games category, representing both domestic
+manufacturers and licensed international brands (LEGO authorised distributor, Hasbro India
+reseller). Distribution from Mumbai warehouse with pan-India 3PL.
+
+OPERATIONAL METRICS
+Lead Time: 10-18 business days (standard) | 5-7 days (express, +22% surcharge)
+MOQ: 36 units per SKU (standard retail carton)
+On-Time Delivery Rate: 88.3%
+Order Fill Rate: 90.7%
+Defect Rate: 2.8% (returned toys are high; robust QC recommended)
+
+FINANCIAL TERMS
+Payment Terms: Net-45 (extended seasonal credit Nov–Dec +15 days extra)
+Discount Tiers: 5% at 150 units | 10% at 400 units | 15% at 800 units
+Returns: 14-day return window for damaged/defective units; seasonal overstock buy-back at 70% of cost
+
+SEASONAL RISK — CRITICAL
+PEAK WINDOW: November 1–December 25 (Children's Day + Christmas = 40-60% of annual toy revenue)
+RECOMMENDATION: Place Q4 orders by October 1 with full payment advance to secure allocation.
+Popular LEGO sets go out of allocation by October 15 annually.
+Penalty Clause: 3% per week for confirmed orders delayed beyond agreed date
+Build 6-week safety stock for Q4 across all Toy SKUs.
+
+RISK ASSESSMENT
+Risk Level: MEDIUM (seasonal demand concentration, allocation risk for licensed products)

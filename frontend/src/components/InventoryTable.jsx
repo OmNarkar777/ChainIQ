@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { useState, useMemo } from "react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Search, X } from "lucide-react";
 import UrgencyBadge from "./UrgencyBadge.jsx";
 
 const URGENCY_RANK = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
@@ -7,137 +7,208 @@ const URGENCY_RANK = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 function SortBtn({ col, sort, onSort }) {
   const active = sort.col === col;
   return (
-    <button onClick={() => onSort(col)} className="inline-flex items-center gap-1 hover:text-[#b5f23d]">
-      {!active && <ArrowUpDown size={11} className="text-zinc-600" />}
-      {active && sort.dir === "asc" && <ArrowUp size={11} className="text-[#b5f23d]" />}
-      {active && sort.dir === "desc" && <ArrowDown size={11} className="text-[#b5f23d]" />}
+    <button onClick={() => onSort(col)} className="inline-flex items-center gap-1 hover:text-[#b5f23d] transition-colors">
+      {!active && <ArrowUpDown size={10} className="text-zinc-600" />}
+      {active && sort.dir === "asc"  && <ArrowUp   size={10} className="text-[#b5f23d]" />}
+      {active && sort.dir === "desc" && <ArrowDown  size={10} className="text-[#b5f23d]" />}
     </button>
   );
 }
 
-const COLUMNS = [
-  { col: "sku_id",              label: "SKU" },
-  { col: "sku_name",            label: "Name" },
-  { col: "reorder_urgency",     label: "Urgency" },
-  { col: "current_stock",       label: "Stock" },
-  { col: "days_until_stockout", label: "Days Left" },
-  { col: "recommended_order_qty", label: "Order Qty" },
-  { col: "stockout_risk_pct",   label: "Risk" },
+const SORTABLE_COLS = [
+  { col: "reorder_urgency",      label: "Urgency"    },
+  { col: "sku_id",               label: "SKU"        },
+  { col: "current_stock",        label: "Stock"      },
+  { col: "days_until_stockout",  label: "Days Left"  },
+  { col: "recommended_order_qty",label: "Order Qty"  },
+  { col: "stockout_risk_pct",    label: "Risk %"     },
 ];
 
-export default function InventoryTable({ data = [], onRowClick }) {
-  const [sort, setSort] = useState({ col: "reorder_urgency", dir: "asc" });
+export default function InventoryTable({ data = [], onRowClick, showSearch = true }) {
+  const [sort,   setSort]   = useState({ col: "reorder_urgency", dir: "asc" });
   const [filter, setFilter] = useState("ALL");
+  const [query,  setQuery]  = useState("");
 
   const FILTERS = ["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"];
-  const counts = Object.fromEntries(
-    FILTERS.map((f) => [f, f === "ALL" ? data.length : data.filter((r) => r.reorder_urgency === f).length])
-  );
 
-  const filtered = data.filter((r) => filter === "ALL" || r.reorder_urgency === filter);
-  const sorted = [...filtered].sort((a, b) => {
+  const counts = useMemo(() => Object.fromEntries(
+    FILTERS.map((f) => [f, f === "ALL" ? data.length : data.filter((r) => r.reorder_urgency === f).length])
+  ), [data]);
+
+  const filtered = useMemo(() => {
+    let rows = filter === "ALL" ? data : data.filter((r) => r.reorder_urgency === filter);
+    if (query.trim()) {
+      const q = query.toLowerCase();
+      rows = rows.filter((r) =>
+        r.sku_id?.toLowerCase().includes(q) ||
+        r.sku_name?.toLowerCase().includes(q) ||
+        r.category?.toLowerCase().includes(q) ||
+        r.supplier_id?.toLowerCase().includes(q) ||
+        r.warehouse_id?.toLowerCase().includes(q)
+      );
+    }
+    return rows;
+  }, [data, filter, query]);
+
+  const sorted = useMemo(() => [...filtered].sort((a, b) => {
     let va = a[sort.col];
     let vb = b[sort.col];
-    if (sort.col === "reorder_urgency") {
-      va = URGENCY_RANK[va];
-      vb = URGENCY_RANK[vb];
-    }
-    if (typeof va === "string") {
-      return sort.dir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
-    }
+    if (sort.col === "reorder_urgency") { va = URGENCY_RANK[va]; vb = URGENCY_RANK[vb]; }
+    if (typeof va === "string") return sort.dir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
     return sort.dir === "asc" ? va - vb : vb - va;
-  });
+  }), [filtered, sort]);
 
   const onSort = (col) =>
     setSort((s) => ({ col, dir: s.col === col && s.dir === "asc" ? "desc" : "asc" }));
 
   return (
     <div>
-      <div className="flex gap-2 mb-4 flex-wrap">
-        {FILTERS.map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-3 py-1 rounded text-xs font-mono border transition-all ${
-              filter === f
-                ? "bg-[#b5f23d] text-zinc-950 border-[#b5f23d]"
-                : "bg-zinc-900 text-zinc-400 border-zinc-700 hover:border-zinc-500"
-            }`}
-          >
-            {f} <span className="opacity-60">({counts[f]})</span>
-          </button>
-        ))}
+      {/* Toolbar */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+        {showSearch && (
+          <div className="relative flex-1 max-w-sm">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search SKU, name, category, supplier…"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-8 pr-8 py-2 text-xs font-mono text-zinc-200 placeholder:text-zinc-600 outline-none focus:border-zinc-600 transition-colors"
+            />
+            {query && (
+              <button onClick={() => setQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2">
+                <X size={12} className="text-zinc-600 hover:text-zinc-400" />
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="flex gap-1.5 flex-wrap">
+          {FILTERS.map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-2.5 py-1 rounded text-xs font-mono border transition-all ${
+                filter === f
+                  ? "bg-[#b5f23d] text-zinc-950 border-[#b5f23d]"
+                  : "bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-600"
+              }`}
+            >
+              {f} <span className="opacity-60">({counts[f]})</span>
+            </button>
+          ))}
+        </div>
       </div>
 
+      {/* Count */}
+      <p className="text-xs font-mono text-zinc-600 mb-2">
+        {sorted.length} of {data.length} SKUs
+        {query && ` matching "${query}"`}
+      </p>
+
+      {/* Table */}
       <div className="overflow-x-auto rounded-lg border border-zinc-800">
-        <table className="w-full text-sm">
+        <table className="w-full text-xs">
           <thead>
-            <tr className="bg-zinc-900 border-b border-zinc-800">
-              {COLUMNS.map(({ col, label }) => (
-                <th
-                  key={col}
-                  className="px-4 py-3 text-left text-xs font-mono text-zinc-500 uppercase tracking-wider whitespace-nowrap"
-                >
-                  <span className="flex items-center gap-1.5">
-                    {label}
-                    <SortBtn col={col} sort={sort} onSort={onSort} />
-                  </span>
-                </th>
-              ))}
-              <th className="px-4 py-3 text-left text-xs font-mono text-zinc-500">Supplier</th>
+            <tr className="bg-zinc-900/80 border-b border-zinc-800">
+              {/* Urgency */}
+              <th className="px-3 py-2.5 text-left font-mono text-zinc-500 uppercase tracking-wider whitespace-nowrap">
+                <span className="flex items-center gap-1">
+                  Urgency <SortBtn col="reorder_urgency" sort={sort} onSort={onSort} />
+                </span>
+              </th>
+              <th className="px-3 py-2.5 text-left font-mono text-zinc-500 uppercase tracking-wider whitespace-nowrap">
+                <span className="flex items-center gap-1">
+                  SKU <SortBtn col="sku_id" sort={sort} onSort={onSort} />
+                </span>
+              </th>
+              <th className="px-3 py-2.5 text-left font-mono text-zinc-500 uppercase tracking-wider">Name</th>
+              <th className="px-3 py-2.5 text-left font-mono text-zinc-500 uppercase tracking-wider">Category</th>
+              <th className="px-3 py-2.5 text-left font-mono text-zinc-500 uppercase tracking-wider whitespace-nowrap">
+                <span className="flex items-center gap-1">
+                  Stock <SortBtn col="current_stock" sort={sort} onSort={onSort} />
+                </span>
+              </th>
+              <th className="px-3 py-2.5 text-left font-mono text-zinc-500 uppercase tracking-wider whitespace-nowrap">
+                <span className="flex items-center gap-1">
+                  Days Left <SortBtn col="days_until_stockout" sort={sort} onSort={onSort} />
+                </span>
+              </th>
+              <th className="px-3 py-2.5 text-left font-mono text-zinc-500 uppercase tracking-wider whitespace-nowrap">
+                <span className="flex items-center gap-1">
+                  Order Qty <SortBtn col="recommended_order_qty" sort={sort} onSort={onSort} />
+                </span>
+              </th>
+              <th className="px-3 py-2.5 text-left font-mono text-zinc-500 uppercase tracking-wider whitespace-nowrap">
+                <span className="flex items-center gap-1">
+                  Risk <SortBtn col="stockout_risk_pct" sort={sort} onSort={onSort} />
+                </span>
+              </th>
+              <th className="px-3 py-2.5 text-left font-mono text-zinc-500 uppercase tracking-wider whitespace-nowrap">Supplier</th>
+              <th className="px-3 py-2.5 text-left font-mono text-zinc-500 uppercase tracking-wider whitespace-nowrap">WH</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-zinc-800/50">
+          <tbody className="divide-y divide-zinc-800/40">
             {sorted.map((row) => (
               <tr
                 key={row.sku_id}
                 onClick={() => onRowClick?.(row)}
-                className={`transition-colors ${onRowClick ? "cursor-pointer" : ""} ${
+                className={`transition-colors group ${onRowClick ? "cursor-pointer" : ""} ${
                   row.reorder_urgency === "CRITICAL"
-                    ? "bg-red-950/20 hover:bg-red-950/40"
+                    ? "bg-red-950/10 hover:bg-red-950/30"
                     : row.reorder_urgency === "HIGH"
-                    ? "bg-amber-950/20 hover:bg-amber-950/40"
-                    : "hover:bg-zinc-800/40"
+                    ? "bg-amber-950/10 hover:bg-amber-950/30"
+                    : "hover:bg-zinc-800/30"
                 }`}
               >
-                <td className="px-4 py-3 font-mono text-zinc-200 text-xs whitespace-nowrap">
-                  {row.sku_id}
-                </td>
-                <td className="px-4 py-3 text-zinc-400 text-xs max-w-[140px] truncate">
-                  {row.sku_name && row.sku_name !== row.sku_id ? row.sku_name : "—"}
-                </td>
-                <td className="px-4 py-3">
+                <td className="px-3 py-2.5">
                   <UrgencyBadge urgency={row.reorder_urgency} />
                 </td>
-                <td className="px-4 py-3 font-mono text-zinc-300 tabular-nums text-xs">
+                <td className="px-3 py-2.5 font-mono text-zinc-200 whitespace-nowrap group-hover:text-[#b5f23d] transition-colors">
+                  {row.sku_id}
+                </td>
+                <td className="px-3 py-2.5 text-zinc-400 max-w-[180px] truncate" title={row.sku_name}>
+                  {row.sku_name || "—"}
+                </td>
+                <td className="px-3 py-2.5">
+                  <span className="text-zinc-500 bg-zinc-800/60 px-1.5 py-0.5 rounded text-xs">
+                    {row.category || "—"}
+                  </span>
+                </td>
+                <td className="px-3 py-2.5 font-mono tabular-nums text-zinc-300">
                   {row.current_stock?.toFixed(0)}
                 </td>
-                <td
-                  className={`px-4 py-3 font-mono tabular-nums text-xs ${
-                    row.days_until_stockout < 7
-                      ? "text-red-400"
-                      : row.days_until_stockout < 14
-                      ? "text-amber-400"
-                      : "text-zinc-300"
-                  }`}
-                >
+                <td className={`px-3 py-2.5 font-mono tabular-nums ${
+                  row.days_until_stockout < 5
+                    ? "text-red-400 font-bold"
+                    : row.days_until_stockout < 12
+                    ? "text-amber-400"
+                    : "text-zinc-300"
+                }`}>
                   {row.days_until_stockout?.toFixed(1)}d
                 </td>
-                <td className="px-4 py-3 font-mono text-[#b5f23d] tabular-nums text-xs">
+                <td className="px-3 py-2.5 font-mono text-[#b5f23d] tabular-nums">
                   {row.recommended_order_qty > 0 ? `+${row.recommended_order_qty?.toFixed(0)}` : "—"}
                 </td>
-                <td className="px-4 py-3 text-xs font-mono text-zinc-400">
-                  {row.stockout_risk_pct?.toFixed(0)}%
+                <td className="px-3 py-2.5 font-mono tabular-nums">
+                  <span className={
+                    row.stockout_risk_pct > 70 ? "text-red-400" :
+                    row.stockout_risk_pct > 40 ? "text-amber-400" : "text-zinc-500"
+                  }>
+                    {row.stockout_risk_pct?.toFixed(0)}%
+                  </span>
                 </td>
-                <td className="px-4 py-3 text-xs font-mono text-zinc-500">
+                <td className="px-3 py-2.5 font-mono text-zinc-500 whitespace-nowrap">
                   {row.supplier_id || "—"}
+                </td>
+                <td className="px-3 py-2.5 font-mono text-zinc-600 whitespace-nowrap">
+                  {row.warehouse_id?.replace("WH_", "") || "—"}
                 </td>
               </tr>
             ))}
             {sorted.length === 0 && (
               <tr>
-                <td colSpan={8} className="py-12 text-center text-zinc-600 font-mono text-sm">
-                  No SKUs match the current filter
+                <td colSpan={10} className="py-16 text-center text-zinc-600 font-mono text-sm">
+                  {query ? `No SKUs match "${query}"` : "No SKUs match the current filter"}
                 </td>
               </tr>
             )}

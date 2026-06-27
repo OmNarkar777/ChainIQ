@@ -1,12 +1,34 @@
-SUPPLIER PROFILE: SUP_001 � Apex Electronics Ltd
-=========================================================
-Lead Time: 7-10 business days (standard), 3-4 days (express, +15% surcharge)
+SUPPLIER PROFILE: SUP_001 — Apex Electronics Ltd
+====================================================
+OVERVIEW
+Apex Electronics Ltd is a domestic supplier specialising in consumer electronics accessories,
+cables, charging solutions, and smart devices. Headquartered in Shenzhen operations with a
+Mumbai fulfilment hub, Apex is our primary supplier for the Electronics category.
+
+OPERATIONAL METRICS
+Lead Time: 5-10 business days (standard) | 2-3 days (express, +18% surcharge)
 Minimum Order Quantity (MOQ): 50 units per SKU
-Reliability Score: 94/100
-On-Time Delivery Rate: 96.2% (last 12 months)
+On-Time Delivery Rate: 96.2% (trailing 12 months)
+Order Fill Rate: 98.4%
+Average Transit Time (last-mile): 1.2 days
+Defect Rate: 0.8% (industry benchmark: 2.1%)
+
+FINANCIAL TERMS
 Payment Terms: Net-30
-Capacity Notes: Can handle peak demand surge up to 200% with 5-day notice.
-Preferred Categories: Electronics, Gadgets
-Discount Tiers: 5% at 200 units, 10% at 500 units, 15% at 1000 units
-Returns Policy: Accepts returns within 14 days for defective units only.
-Notes: Preferred partner for Q4 electronics surge. Book capacity by October 1.
+Credit Limit: ₹25 Lakhs
+Discount Tiers: 5% at 200 units | 10% at 500 units | 15% at 1,000 units | 18% at 2,500 units
+Penalty Clause: 2% invoice value per week of delay beyond agreed lead time (capped at 10%)
+
+CAPACITY
+Standard capacity: up to 5,000 units/month per SKU
+Surge capacity: up to 200% with 5 business days' advance notice
+Q4 capacity reservation window: September 1–October 15 annually
+
+RISK ASSESSMENT
+Risk Level: LOW
+Key Risks: Slight price volatility for OLED/AMOLED components (±8% quarterly)
+Contingency: Dual-sourced with SUP_006 (TechGlobal Asia) for 12 flagship SKUs
+Insurance: Cargo insurance included up to ₹50 Lakhs per shipment
+
+COMPLIANCE
+ISO 9001:2015 certified | BIS-approved for 23 product lines | ROHS compliant

@@ -26,6 +26,16 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning(f"Model warm-up skipped: {exc}")
 
+    # Pre-build the inventory SKU cache so the first HTTP request doesn't pay
+    # the ~2s build cost (300 SKUs × inventory math) and doesn't race with
+    # concurrent requests from the frontend on initial page load.
+    try:
+        from backend.routers.inventory import _get_sku_records
+        recs = _get_sku_records()
+        logger.info(f"Inventory cache warm ({len(recs)} SKUs)")
+    except Exception as exc:
+        logger.warning(f"Inventory warm-up skipped: {exc}")
+
     # Ensure ChromaDB is populated (no-op when Dockerfile pre-ingested at build time).
     try:
         from backend.rag.vectorstore import ingest_supplier_docs, collection_size

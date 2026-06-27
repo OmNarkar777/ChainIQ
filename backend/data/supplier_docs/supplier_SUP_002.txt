@@ -1,12 +1,31 @@
-SUPPLIER PROFILE: SUP_002 � FashionForward Apparel
-=========================================================
-Lead Time: 14-21 days (standard), 7 days (express, +25% surcharge)
-MOQ: 100 units per style/colorway
-Reliability Score: 78/100
-On-Time Delivery Rate: 81.5% � NOTE: Frequent delays during festival season
-Payment Terms: 50% advance, 50% on delivery
-Capacity Notes: Seasonal constraints Oct-Dec. Place orders by Sep 15 for Diwali.
-Preferred Categories: Apparel, Accessories
-Discount Tiers: 8% at 300 units, 12% at 600 units
-Returns Policy: No returns on custom/seasonal items.
-Notes: High-variance supplier. Always maintain 3-week safety stock buffer.
+SUPPLIER PROFILE: SUP_002 — FashionForward Apparel Co
+======================================================
+OVERVIEW
+FashionForward Apparel Co is our primary apparel supplier, managing fast-fashion lines,
+ethnic wear, and performance sportswear. Based in Tirupur (knitwear hub) with seasonal
+production overflow to Surat and Jaipur units.
+
+OPERATIONAL METRICS
+Lead Time: 14-21 days (standard) | 7 days (express, +25% surcharge)
+MOQ: 100 units per style/colorway/size run
+On-Time Delivery Rate: 81.5% — BELOW portfolio average of 91.2%
+Delay Pattern: Frequent 7-14 day slippages during Diwali (Oct) and Christmas (Dec) seasons
+Order Fill Rate: 84.1% (sizes frequently out-of-stock at source)
+Defect Rate: 3.2% (above benchmark; QC inspection recommended on delivery)
+
+FINANCIAL TERMS
+Payment Terms: 50% advance on purchase order, 50% on delivery
+Penalty Clause: 1.5% per week (but historically waived due to relationship)
+Discount Tiers: 8% at 300 units | 12% at 600 units | 15% at 1,200 units
+
+SEASONAL CONSTRAINTS — CRITICAL
+RISK WINDOW: October–December. Production units at 110% capacity from Sept 20.
+RECOMMENDATION: Place Diwali orders by September 10; Christmas orders by October 20.
+Orders placed after these dates carry HIGH risk of 3-week delay.
+Build 3-week safety stock buffer for ALL FashionForward SKUs entering Q4.
+
+RISK ASSESSMENT
+Risk Level: HIGH
+Key Risks: Seasonal capacity crunch, size-availability inconsistency, advance payment exposure
+Mitigation: Maintain 21-day safety stock from August onward; secondary sourcing from local
+boutique manufacturers for emergency fills at +30% cost premium.

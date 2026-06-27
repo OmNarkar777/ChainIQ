@@ -59,6 +59,7 @@ export const api = {
   getSkuDetail:        (id)       => req(`/inventory/skus/${id}`),
   getSkuHistory:       (id, d=30) => req(`/inventory/skus/${id}/history?days=${d}`),
   getAnalytics:        ()         => req("/inventory/analytics"),
+  getSupplierMetrics:  ()         => req("/inventory/suppliers"),
 
   // Forecast
   forecastSku:   (id, h=7) => req(`/forecast/sku/${id}?horizon_days=${h}`),

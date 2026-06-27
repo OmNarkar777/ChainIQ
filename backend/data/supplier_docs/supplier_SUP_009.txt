@@ -1,0 +1,24 @@
+SUPPLIER PROFILE: SUP_009 — AutoParts Express India
+====================================================
+OVERVIEW
+AutoParts Express India supplies automotive accessories, car care products, and in-car
+electronics. Domestic manufacturer and importer based in Pune with express courier delivery.
+
+OPERATIONAL METRICS
+Lead Time: 3-7 business days (standard) | 1-2 days (express, +15% surcharge)
+MOQ: 10 units per SKU (low MOQ makes us a preferred partner for tail-SKUs)
+On-Time Delivery Rate: 95.2%
+Order Fill Rate: 97.8%
+Defect Rate: 1.3%
+
+FINANCIAL TERMS
+Payment Terms: Net-30 | 2% cash discount for prepayment
+Discount Tiers: 3% at 50 units | 7% at 150 units | 11% at 300 units | 15% at 600 units
+Warranty: 12-month product warranty (electronics accessories), 6 months (mechanical)
+
+RISK ASSESSMENT
+Risk Level: VERY LOW
+Key Risks: Minor component shortages for imported car electronics (dash cams, sensors) with
++3-5 day lead time impact when global chip supply is tight. Historically occurs Q3 (Jul–Sep).
+Recommendation: Reliable, low-risk partner. Suitable for JIT (just-in-time) ordering strategy.
+Pre-build dash cam and parking sensor stock before monsoon season (vehicles sell more accessories).

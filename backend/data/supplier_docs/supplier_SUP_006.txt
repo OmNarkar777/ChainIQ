@@ -1,0 +1,28 @@
+SUPPLIER PROFILE: SUP_006 — TechGlobal Asia Pacific
+====================================================
+OVERVIEW
+TechGlobal Asia Pacific (Singapore-registered, China/Taiwan manufacturing) supplies premium
+consumer electronics components and finished goods. Primary route: Guangzhou → Singapore →
+Mumbai (sea freight, 18-22 days) with air freight option (+55% surcharge, 4-6 days).
+
+OPERATIONAL METRICS
+Lead Time: 18-28 calendar days (sea, standard) | 4-6 days (air freight)
+MOQ: 100 units per SKU (sea) | 50 units (air)
+On-Time Delivery Rate: 82.0% — impacted by port transit variability
+Order Fill Rate: 95.2%
+Defect Rate: 1.1% (factory QC certified, random 5% lot inspection)
+
+FINANCIAL TERMS
+Payment Terms: LC (Letter of Credit) or TT wire transfer, 30% advance + 70% on BL
+Discount Tiers: 3% at 500 units | 7% at 1,000 units | 12% at 2,500 units
+Volume Commitment: Annual volume agreement reduces per-unit cost by 8-15%
+
+RISK ASSESSMENT
+Risk Level: MEDIUM (supply chain and geopolitical exposure)
+Key Risks:
+  - Chinese New Year (January–February): factories closed 2-3 weeks. Place orders by Dec 15.
+  - Port congestion at Guangzhou: historical +5-8 day delay during Q4 (Sep–Nov)
+  - INR/USD and USD/CNY currency risk: hedged quarterly by procurement team
+  - Geopolitical: Taiwan Strait risk (low probability, high impact) — dual sourced with SUP_001
+Compliance: CE, FCC, BIS import clearance handled by TechGlobal; ROHS, WEEE certified
+Penalty Clause: 5% of order value for delivery >14 days beyond agreed date

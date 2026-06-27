@@ -1,12 +1,29 @@
-SUPPLIER PROFILE: SUP_005 � SportZone Pro Supplies
-=========================================================
-Lead Time: 5-8 business days
+SUPPLIER PROFILE: SUP_005 — SportZone Pro Supplies
+===================================================
+OVERVIEW
+SportZone Pro is our exclusive Sports & Fitness supplier covering equipment, footwear accessories,
+and outdoor gear. Production across Jalandhar (cricket/hockey) and Meerut (boxing/martial arts)
+with national distribution from a Lucknow fulfilment hub.
+
+OPERATIONAL METRICS
+Lead Time: 5-8 business days (standard) | 2-3 days (express, +20% surcharge)
 MOQ: 20 units per SKU
-Reliability Score: 91/100
 On-Time Delivery Rate: 93.4%
-Payment Terms: Net-30
-Capacity Notes: Cricket/badminton season (Mar-May, Oct-Nov) causes 2-week delays.
-Preferred Categories: Sports Equipment, Fitness, Outdoor
-Discount Tiers: 4% at 100 units, 9% at 300 units, 14% at 600 units
-Returns Policy: 30-day no-questions return for unused items with original packaging.
-Notes: Reliable for non-seasonal orders. Build 4-week buffer before cricket season.
+Order Fill Rate: 94.8%
+Defect Rate: 1.2%
+
+FINANCIAL TERMS
+Payment Terms: Net-30 | Quarterly settlement option for orders >₹5 Lakhs
+Discount Tiers: 4% at 100 units | 9% at 300 units | 14% at 600 units | 18% at 1,000 units
+Return Policy: 30-day no-questions return for unused items in original packaging
+
+SEASONAL RISK
+CRITICAL DELAY WINDOW: March–May (IPL cricket season) and October–November (domestic cricket)
+During these windows, Jalandhar units operate at 120% and lead times extend to 12-16 days.
+RECOMMENDATION: Pre-buy 4 weeks of cricket equipment inventory before March 1 and October 1.
+Football/volleyball/fitness equipment is unaffected by cricket season.
+
+RISK ASSESSMENT
+Risk Level: LOW-MEDIUM
+Key Risks: Cricket season capacity crunch (2 windows per year), raw leather price volatility (±12%)
+Mitigation: Pre-season stock build and futures pricing agreement negotiated for Q2/Q4
