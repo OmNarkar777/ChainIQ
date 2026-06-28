@@ -49,8 +49,9 @@ async function req(path, opts = {}) {
 }
 
 export const api = {
-  // Health
+  // Health / Meta
   health: () => req("/health"),
+  getMeta: () => req("/health/meta"),
 
   // Inventory
   getInventorySummary: ()         => req("/inventory/summary"),

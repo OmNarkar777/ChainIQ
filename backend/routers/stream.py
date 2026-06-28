@@ -4,6 +4,7 @@ GET /stream/analyze?sku_ids=SKU_0001,SKU_0002&include_rag=true
 
 All heavy singletons (predictor, DataFrame cache) are accessed via the
 shared module-level objects to avoid redundant model loads and CSV reads.
+Prediction results and LLM reports are cached — repeat analyses return in < 100ms.
 """
 from __future__ import annotations
 
@@ -29,18 +30,23 @@ async def _pipeline(sku_ids: list[str], include_rag: bool) -> AsyncIterator[str]
     started = time.time()
 
     yield await _evt("run_started", run_id=run_id, sku_count=len(sku_ids))
-    await asyncio.sleep(0.05)
+    await asyncio.sleep(0.02)
 
     # ── Forecasting ──────────────────────────────────────────────────────────
     yield await _evt("forecasting_start", message="XGBoost demand forecasting", run_id=run_id)
     t0 = time.time()
+    forecast_cache_hits = 0
     try:
         from backend.routers.forecast import get_predictor
+        from backend.ml.predictor import _prediction_cache
         predictor = get_predictor()
         done_fc, fail_fc = 0, 0
         for sid in sku_ids:
             try:
+                was_cached = sid in _prediction_cache
                 predictor.predict_sku(sid)
+                if was_cached:
+                    forecast_cache_hits += 1
                 done_fc += 1
             except Exception:
                 fail_fc += 1
@@ -49,10 +55,12 @@ async def _pipeline(sku_ids: list[str], include_rag: bool) -> AsyncIterator[str]
             skus_processed=done_fc,
             skus_failed=fail_fc,
             duration_ms=int((time.time() - t0) * 1000),
+            cache_hits=forecast_cache_hits,
+            cache_misses=done_fc - forecast_cache_hits,
         )
     except Exception as ex:
         yield await _evt("forecasting_error", error=str(ex))
-    await asyncio.sleep(0.05)
+    await asyncio.sleep(0.02)
 
     # ── Inventory ────────────────────────────────────────────────────────────
     t0 = time.time()
@@ -99,7 +107,7 @@ async def _pipeline(sku_ids: list[str], include_rag: bool) -> AsyncIterator[str]
         )
     except Exception as ex:
         yield await _evt("inventory_error", error=str(ex))
-    await asyncio.sleep(0.05)
+    await asyncio.sleep(0.02)
 
     # ── RAG ──────────────────────────────────────────────────────────────────
     if include_rag:
@@ -107,11 +115,11 @@ async def _pipeline(sku_ids: list[str], include_rag: bool) -> AsyncIterator[str]
         try:
             from backend.rag.vectorstore import collection_size
             n = collection_size()
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.05)
             yield await _evt("rag_complete", chunks=n, duration_ms=int((time.time() - t0) * 1000))
         except Exception as ex:
             yield await _evt("rag_error", error=str(ex))
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.02)
 
     # ── Full LangGraph pipeline (report) ─────────────────────────────────────
     t0 = time.time()
@@ -157,12 +165,14 @@ async def _pipeline(sku_ids: list[str], include_rag: bool) -> AsyncIterator[str]
             1 for r in final["inventory_recommendations"]
             if r["reorder_urgency"] == "CRITICAL"
         )
+        report_cache_hit = final.get("_report_cache_hit", False)
         yield await _evt(
             "report_complete",
             run_id=run_id,
             skus_analyzed=final.get("skus_analyzed", len(sku_ids)),
             critical=critical_count,
             duration_ms=int((time.time() - t0) * 1000),
+            cache_hit=report_cache_hit,
         )
     except Exception as ex:
         yield await _evt("report_error", error=str(ex))

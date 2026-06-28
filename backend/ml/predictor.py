@@ -17,6 +17,31 @@ from backend.ml.feature_engineering import engineer_features
 
 logger = logging.getLogger(__name__)
 
+# Module-level prediction cache — keyed by sku_id, lives for the process lifetime.
+# Since model and data are static, predictions are deterministic and safe to cache forever.
+_prediction_cache: dict[str, "PredictionResult"] = {}
+_cache_hits: int = 0
+_cache_misses: int = 0
+
+
+def get_cache_stats() -> dict:
+    return {
+        "prediction_cache_size": len(_prediction_cache),
+        "prediction_cache_hits": _cache_hits,
+        "prediction_cache_misses": _cache_misses,
+        "prediction_cache_hit_rate": (
+            round(_cache_hits / (_cache_hits + _cache_misses) * 100, 1)
+            if (_cache_hits + _cache_misses) > 0 else 0.0
+        ),
+    }
+
+
+def clear_prediction_cache() -> None:
+    global _cache_hits, _cache_misses
+    _prediction_cache.clear()
+    _cache_hits = 0
+    _cache_misses = 0
+
 
 @dataclass
 class PredictionResult:
@@ -94,9 +119,17 @@ class DemandPredictor:
         self,
         sku_id: str,
         horizon_days: int = 7,
+        n_bootstraps: int = 200,
     ) -> PredictionResult:
+        global _cache_hits, _cache_misses
+
         if self.model is None:
             raise RuntimeError("Call load_model() first")
+
+        # Return cached result if available — predictions are deterministic
+        if sku_id in _prediction_cache:
+            _cache_hits += 1
+            return _prediction_cache[sku_id]
 
         X = self._get_sku_features(sku_id)
         if len(X) == 0:
@@ -106,7 +139,7 @@ class DemandPredictor:
         point_pred = float(self.model.predict(X_latest)[0])
         point_pred = max(0, point_pred)
 
-        lower, upper, std = self._bootstrap_confidence(X_latest)
+        lower, upper, std = self._bootstrap_confidence(X_latest, n_bootstraps=n_bootstraps)
 
         # Top-5 feature contributions
         fi = self.meta.get("feature_names", list(X_latest.columns))
@@ -117,10 +150,7 @@ class DemandPredictor:
             reverse=True
         )[:5]
 
-        # Rough MAPE estimate from training meta
-        mape_est = self.meta.get("xgb_mape")
-
-        return PredictionResult(
+        result = PredictionResult(
             sku_id=sku_id,
             predicted_units=round(point_pred, 2),
             lower_bound=round(lower, 2),
@@ -129,8 +159,12 @@ class DemandPredictor:
             horizon_days=horizon_days,
             model_version=str(self.version),
             top_features=top5,
-            mape_estimate=mape_est,
+            mape_estimate=self.meta.get("xgb_mape"),
         )
+
+        _prediction_cache[sku_id] = result
+        _cache_misses += 1
+        return result
 
     def predict_batch(self, sku_ids: List[str]) -> List[PredictionResult]:
         results = []

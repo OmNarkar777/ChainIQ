@@ -1,15 +1,44 @@
 """
 Report agent: synthesises forecasts + inventory recommendations
 into a natural-language executive summary using Groq LLM.
+
+LLM reports are cached by a snapshot key derived from the set of
+critical/high SKU urgencies. Repeat analyses of the same inventory
+state return instantly without a Groq API round-trip.
 """
 
 import json
+import hashlib
 import logging
 from backend.agents.state import ChainIQState
 from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+# Report cache: key → report text. Lives for the process lifetime.
+_report_cache: dict[str, str] = {}
+_report_hits: int = 0
+_report_misses: int = 0
+
+
+def get_report_cache_stats() -> dict:
+    return {
+        "report_cache_size": len(_report_cache),
+        "report_cache_hits": _report_hits,
+        "report_cache_misses": _report_misses,
+    }
+
+
+def _cache_key(state: ChainIQState) -> str:
+    """Stable key based on the urgency snapshot — same inventory = same report."""
+    recs = state["inventory_recommendations"]
+    snapshot = sorted(
+        (r["sku_id"], r["reorder_urgency"], int(r.get("days_until_stockout", 0)))
+        for r in recs
+    )
+    raw = json.dumps(snapshot, separators=(",", ":"))
+    return hashlib.md5(raw.encode()).hexdigest()
 
 
 def _build_prompt(state: ChainIQState) -> str:
@@ -44,8 +73,23 @@ Be specific with numbers. Use business language suitable for an operations manag
 
 
 def report_agent(state: ChainIQState) -> ChainIQState:
-    """LangGraph node: generate NL report via Groq LLM."""
+    """LangGraph node: generate NL report via Groq LLM (with caching)."""
+    global _report_hits, _report_misses
+
     logger.info("[ReportAgent] generating report")
+
+    key = _cache_key(state)
+    if key in _report_cache:
+        _report_hits += 1
+        logger.info("[ReportAgent] cache hit — returning cached report")
+        return {
+            **state,
+            "report_text":  _report_cache[key],
+            "report_error": None,
+            "status":       "DONE",
+            "_report_cache_hit": True,
+        }
+
     try:
         from groq import Groq
         client = Groq(api_key=settings.groq_api_key)
@@ -63,11 +107,18 @@ def report_agent(state: ChainIQState) -> ChainIQState:
             max_tokens=1200,
         )
         report_text = response.choices[0].message.content
-        return {**state, "report_text": report_text, "report_error": None, "status": "DONE"}
+        _report_cache[key] = report_text
+        _report_misses += 1
+        return {
+            **state,
+            "report_text":  report_text,
+            "report_error": None,
+            "status":       "DONE",
+            "_report_cache_hit": False,
+        }
 
     except Exception as e:
         logger.error(f"[ReportAgent] LLM error: {e}")
-        # Fallback: template-based report
         recs     = state["inventory_recommendations"]
         critical = [r for r in recs if r["reorder_urgency"] == "CRITICAL"]
         fallback = (
@@ -79,4 +130,10 @@ def report_agent(state: ChainIQState) -> ChainIQState:
                 for r in critical[:3]
             )
         )
-        return {**state, "report_text": fallback, "report_error": str(e), "status": "DONE"}
+        return {
+            **state,
+            "report_text":       fallback,
+            "report_error":      str(e),
+            "status":            "DONE",
+            "_report_cache_hit": False,
+        }

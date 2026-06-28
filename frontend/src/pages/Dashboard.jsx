@@ -11,7 +11,7 @@ import UrgencyBadge from "../components/UrgencyBadge.jsx";
 import {
   Activity, TrendingDown, Package, Zap,
   RefreshCw, ArrowRight, DollarSign, Clock,
-  AlertTriangle, Play,
+  AlertTriangle, Play, Cpu, Database,
 } from "lucide-react";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -76,12 +76,14 @@ export default function Dashboard() {
   const [critical, setCritical]   = useState([]);
   const [runs, setRuns]           = useState([]);
   const [analytics, setAnalytics] = useState(null);
+  const [meta, setMeta]           = useState(null);
   const [ts, setTs]               = useState(new Date());
 
   const loadAll = () => {
     api.getCriticalSkus().then(setCritical).catch(() => {});
     api.listRuns().then(setRuns).catch(() => {});
     api.getAnalytics().then(setAnalytics).catch(() => {});
+    api.getMeta().then(setMeta).catch(() => {});
   };
 
   useEffect(() => { loadAll(); }, []);
@@ -113,6 +115,49 @@ export default function Dashboard() {
       </div>
 
       <AlertBanner criticalSkus={critical} />
+
+      {/* Model intelligence bar */}
+      {meta && (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mb-5 px-4 py-2.5 bg-zinc-900 border border-zinc-800 rounded-lg text-xs font-mono">
+          <div className="flex items-center gap-1.5">
+            <Cpu size={11} className="text-[#b5f23d]" />
+            <span className="text-zinc-500">Model</span>
+            <span className="text-zinc-300">{meta.model_version}</span>
+          </div>
+          <div className="w-px h-3 bg-zinc-700" />
+          <div className="flex items-center gap-1.5">
+            <span className="text-zinc-500">MAPE</span>
+            <span className="text-[#b5f23d]">{meta.model_mape?.toFixed(1)}%</span>
+          </div>
+          <div className="w-px h-3 bg-zinc-700" />
+          <div className="flex items-center gap-1.5">
+            <span className="text-zinc-500">Confidence</span>
+            <span className="text-zinc-300">{meta.confidence_pct}% CI</span>
+          </div>
+          <div className="w-px h-3 bg-zinc-700" />
+          <div className="flex items-center gap-1.5">
+            <span className="text-zinc-500">Features</span>
+            <span className="text-zinc-300">{meta.feature_count}</span>
+          </div>
+          <div className="w-px h-3 bg-zinc-700" />
+          <div className="flex items-center gap-1.5">
+            <Database size={11} className="text-zinc-500" />
+            <span className="text-zinc-500">Cache</span>
+            <span className={meta.cache_warm ? "text-[#b5f23d]" : "text-amber-400"}>
+              {meta.cache_status}
+            </span>
+          </div>
+          {meta.prediction_cache_size > 0 && (
+            <>
+              <div className="w-px h-3 bg-zinc-700" />
+              <span className="text-zinc-600">
+                {meta.prediction_cache_size} SKUs cached
+                {meta.prediction_cache_hit_rate > 0 && ` · ${meta.prediction_cache_hit_rate}% hit rate`}
+              </span>
+            </>
+          )}
+        </div>
+      )}
 
       {/* KPI row */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
