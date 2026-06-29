@@ -4,13 +4,49 @@
 // • Vercel + Render: VITE_API_URL=https://chainiq-api.onrender.com (Vercel dashboard)
 const BASE = import.meta.env.VITE_API_URL ?? "/api";
 
+// ── In-memory TTL cache ───────────────────────────────────────────────────────
+// Eliminates repeat API calls within a TTL window (navigating between pages
+// no longer re-fetches data that was already loaded this session).
+const _cache = new Map(); // key → { data, expires }
+
+const CACHE_TTL = {
+  "/inventory/dashboard": 30_000,   // 30 s — summary, analytics, critical SKUs
+  "/inventory/skus":      120_000,  // 2 min — full 300-record list
+  "/inventory/sku-ids":   300_000,  // 5 min — static lightweight list
+  "/inventory/summary":   30_000,
+  "/inventory/critical":  30_000,
+  "/inventory/analytics": 60_000,
+  "/inventory/suppliers": 60_000,
+  "/health/meta":         60_000,
+  "/agent/runs":          10_000,   // runs change frequently
+};
+
+function _cacheKey(path) { return path; }
+
+function _getCached(path) {
+  const entry = _cache.get(_cacheKey(path));
+  if (entry && Date.now() < entry.expires) return entry.data;
+  return null;
+}
+
+function _setCached(path, data) {
+  const ttl = CACHE_TTL[path];
+  if (ttl) _cache.set(_cacheKey(path), { data, expires: Date.now() + ttl });
+}
+
+// ── Core fetch wrapper ────────────────────────────────────────────────────────
+
 async function req(path, opts = {}) {
   const url    = `${BASE}${path}`;
   const method = (opts.method ?? "GET").toUpperCase();
   const headers = { ...opts.headers };
 
-  // Only set Content-Type on requests that have a body — sending it on
-  // GET requests turns simple CORS requests into preflighted ones unnecessarily.
+  // Use cache only for cacheable GET requests
+  if (method === "GET" && !opts.skipCache) {
+    const cached = _getCached(path);
+    if (cached !== null) return cached;
+  }
+
   if (!["GET", "HEAD"].includes(method)) {
     headers["Content-Type"] = "application/json";
   }
@@ -45,18 +81,26 @@ async function req(path, opts = {}) {
     throw new Error(payload.detail ?? `HTTP ${r.status}`);
   }
 
-  return r.json();
+  const data = await r.json();
+  if (method === "GET") _setCached(path, data);
+  return data;
 }
+
+// ── Public API ─────────────────────────────────────────────────────────────────
 
 export const api = {
   // Health / Meta
-  health: () => req("/health"),
-  getMeta: () => req("/health/meta"),
+  health:   () => req("/health"),
+  getMeta:  () => req("/health/meta"),
+
+  // Dashboard — single call replacing 4 separate round-trips
+  getDashboard: () => req("/inventory/dashboard"),
 
   // Inventory
   getInventorySummary: ()         => req("/inventory/summary"),
   getCriticalSkus:     ()         => req("/inventory/critical"),
   getAllSkus:          ()         => req("/inventory/skus"),
+  getSkuIds:           ()         => req("/inventory/sku-ids"),  // lightweight: {sku_id, sku_name, category}
   getSkuDetail:        (id)       => req(`/inventory/skus/${id}`),
   getSkuHistory:       (id, d=30) => req(`/inventory/skus/${id}/history?days=${d}`),
   getAnalytics:        ()         => req("/inventory/analytics"),
@@ -71,6 +115,20 @@ export const api = {
   getRun:      (id)   => req(`/agent/runs/${id}`),
   listRuns:    ()     => req("/agent/runs"),
 };
+
+// ── Cache utilities ────────────────────────────────────────────────────────────
+
+/** Invalidate a specific cached path (e.g. after a mutation). */
+export function invalidateCache(path) {
+  _cache.delete(_cacheKey(path));
+}
+
+/** Clear the entire cache (e.g. on manual refresh). */
+export function clearCache() {
+  _cache.clear();
+}
+
+// ── SSE streaming ─────────────────────────────────────────────────────────────
 
 export function streamAnalysis(body, onEvent, onDone, onError) {
   const ctrl  = new AbortController();

@@ -1,9 +1,13 @@
+import { lazy, Suspense } from "react";
 import { Routes, Route, NavLink, Link } from "react-router-dom";
 import { LayoutDashboard, PlayCircle, Package, TrendingUp, Zap } from "lucide-react";
-import Dashboard from "./pages/Dashboard.jsx";
-import Analysis  from "./pages/Analysis.jsx";
-import Inventory from "./pages/Inventory.jsx";
-import Forecast  from "./pages/Forecast.jsx";
+
+// Route-based code splitting: each page is its own chunk.
+// The browser only downloads code for the page the user visits.
+const Dashboard = lazy(() => import("./pages/Dashboard.jsx"));
+const Analysis  = lazy(() => import("./pages/Analysis.jsx"));
+const Inventory = lazy(() => import("./pages/Inventory.jsx"));
+const Forecast  = lazy(() => import("./pages/Forecast.jsx"));
 
 const NAV = [
   { to: "/",          icon: LayoutDashboard, label: "Dashboard"  },
@@ -11,6 +15,18 @@ const NAV = [
   { to: "/inventory", icon: Package,         label: "Inventory"  },
   { to: "/forecast",  icon: TrendingUp,      label: "Forecast"   },
 ];
+
+function PageSkeleton() {
+  return (
+    <div className="space-y-4 animate-pulse">
+      <div className="skeleton h-8 w-48 rounded" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[...Array(4)].map((_, i) => <div key={i} className="skeleton h-24 rounded-lg" />)}
+      </div>
+      <div className="skeleton h-64 rounded-lg" />
+    </div>
+  );
+}
 
 function NotFound() {
   return (
@@ -63,20 +79,22 @@ export default function App() {
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
-            <span className="text-xs font-mono text-zinc-700 hidden md:block">v2.0.0</span>
+            <span className="text-xs font-mono text-zinc-700 hidden md:block">v2.1.0</span>
             <div className="w-1.5 h-1.5 rounded-full bg-[#b5f23d]" />
           </div>
         </div>
       </header>
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8">
-        <Routes>
-          <Route path="/"          element={<Dashboard />} />
-          <Route path="/analysis"  element={<Analysis />} />
-          <Route path="/inventory" element={<Inventory />} />
-          <Route path="/forecast"  element={<Forecast />} />
-          <Route path="*"          element={<NotFound />} />
-        </Routes>
+        <Suspense fallback={<PageSkeleton />}>
+          <Routes>
+            <Route path="/"          element={<Dashboard />} />
+            <Route path="/analysis"  element={<Analysis />} />
+            <Route path="/inventory" element={<Inventory />} />
+            <Route path="/forecast"  element={<Forecast />} />
+            <Route path="*"          element={<NotFound />} />
+          </Routes>
+        </Suspense>
       </main>
 
       <footer className="border-t border-zinc-900 py-3 px-4">

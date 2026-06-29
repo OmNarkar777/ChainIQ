@@ -148,7 +148,7 @@ export default function Analysis() {
   const stopRef                       = useRef(null);
 
   useEffect(() => {
-    api.getAllSkus().then(setAllSkus).catch(() => {});
+    api.getSkuIds().then(setAllSkus).catch(() => {});
   }, []);
 
   // ── Cosmetic animation when running starts ──────────────────────────────

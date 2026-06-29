@@ -4,8 +4,7 @@ import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
-import { api } from "../api/client.js";
-import { useInventorySummary } from "../hooks/useInventory.js";
+import { api, clearCache } from "../api/client.js";
 import AlertBanner from "../components/AlertBanner.jsx";
 import UrgencyBadge from "../components/UrgencyBadge.jsx";
 import {
@@ -70,31 +69,39 @@ function CategoryTooltip({ active, payload }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
+// Single API call: GET /inventory/dashboard returns summary + critical_skus +
+// analytics + recent_runs in one round-trip (was 4 separate calls).
 
 export default function Dashboard() {
-  const { data: sum, loading: sumLoading, refetch } = useInventorySummary();
-  const [critical, setCritical]   = useState([]);
-  const [runs, setRuns]           = useState([]);
-  const [analytics, setAnalytics] = useState(null);
-  const [meta, setMeta]           = useState(null);
-  const [ts, setTs]               = useState(new Date());
+  const [data,    setData]    = useState(null);
+  const [meta,    setMeta]    = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [ts,      setTs]      = useState(new Date());
 
-  const loadAll = () => {
-    api.getCriticalSkus().then(setCritical).catch(() => {});
-    api.listRuns().then(setRuns).catch(() => {});
-    api.getAnalytics().then(setAnalytics).catch(() => {});
-    api.getMeta().then(setMeta).catch(() => {});
+  const loadAll = (bust = false) => {
+    if (bust) clearCache();
+    setLoading(true);
+    Promise.all([
+      api.getDashboard(),
+      api.getMeta().catch(() => null),
+    ]).then(([dash, m]) => {
+      setData(dash);
+      setMeta(m);
+      setLoading(false);
+      setTs(new Date());
+    }).catch(() => setLoading(false));
   };
 
   useEffect(() => { loadAll(); }, []);
 
-  const refresh = () => {
-    refetch();
-    loadAll();
-    setTs(new Date());
-  };
+  const refresh = () => loadAll(true);
 
-  const analyticsLoading = analytics === null;
+  const sum      = data?.summary;
+  const critical = data?.critical_skus ?? [];
+  const analytics = data?.analytics ?? null;
+  const runs     = data?.recent_runs ?? [];
+
+  const analyticsLoading = loading;
 
   return (
     <div>
@@ -166,7 +173,7 @@ export default function Dashboard() {
           value={sum?.critical}
           icon={Zap}
           accent="text-red-400"
-          loading={sumLoading}
+          loading={loading}
           sub="order immediately"
         />
         <KPI
@@ -174,7 +181,7 @@ export default function Dashboard() {
           value={sum?.high}
           icon={TrendingDown}
           accent="text-amber-400"
-          loading={sumLoading}
+          loading={loading}
           sub="order within 2 days"
         />
         <KPI
@@ -353,7 +360,7 @@ export default function Dashboard() {
                 </div>
               </Link>
             ))
-          ) : sumLoading ? (
+          ) : loading ? (
             <div className="px-5 py-3 space-y-2">
               {[...Array(4)].map((_, i) => <div key={i} className="skeleton h-10 rounded" />)}
             </div>

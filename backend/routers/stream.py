@@ -1,10 +1,18 @@
 """
 SSE streaming endpoint — real-time agent pipeline progress.
-GET /stream/analyze?sku_ids=SKU_0001,SKU_0002&include_rag=true
 
-All heavy singletons (predictor, DataFrame cache) are accessed via the
-shared module-level objects to avoid redundant model loads and CSV reads.
-Prediction results and LLM reports are cached — repeat analyses return in < 100ms.
+Architecture (NO LangGraph in this path):
+  Stage 1 — Forecast   : iterate prediction cache (O(1) per SKU)
+  Stage 2 — Inventory  : read from pre-built _sku_records cache (O(N) lookup)
+  Stage 3 — RAG        : concurrent per-supplier queries via asyncio.gather
+  Stage 4 — Report     : Groq LLM with 20s timeout, cache, graceful fallback
+
+Why bypass LangGraph here:
+  • LangGraph re-runs forecast + inventory (double work)
+  • No parallelism control over RAG queries
+  • State overhead blocks timeout injection
+
+The LangGraph graph remains available for /agent/analyze (non-streaming path).
 """
 from __future__ import annotations
 
@@ -20,164 +28,278 @@ from fastapi.responses import StreamingResponse
 
 router = APIRouter(prefix="/stream", tags=["stream"])
 
+_GROQ_TIMEOUT = 25.0   # seconds before falling back to template report
 
-async def _evt(type_: str, **kw) -> str:
+
+def _evt(type_: str, **kw) -> str:
     return "data: " + json.dumps({"type": type_, "ts": int(time.time() * 1000), **kw}) + "\n\n"
 
+
+# ── Stage helpers (sync, run in executor where needed) ───────────────────────
+
+def _stage_forecast(sku_ids: list[str]) -> dict:
+    """Return forecast results for requested SKUs using prediction cache."""
+    from backend.routers.forecast import get_predictor
+    from backend.ml.predictor import _prediction_cache
+
+    predictor = get_predictor()
+    results, hits, misses = [], 0, 0
+    for sid in sku_ids:
+        try:
+            was_cached = sid in _prediction_cache
+            r = predictor.predict_sku(sid)
+            results.append({
+                "sku_id":          r.sku_id,
+                "predicted_units": r.predicted_units,
+                "lower_bound":     r.lower_bound,
+                "upper_bound":     r.upper_bound,
+                "model_version":   r.model_version,
+            })
+            if was_cached:
+                hits += 1
+            else:
+                misses += 1
+        except Exception:
+            misses += 1
+    return {"results": results, "hits": hits, "misses": misses}
+
+
+def _stage_inventory(sku_ids: list[str]) -> dict:
+    """Return inventory recommendations from pre-built _sku_records (no pandas)."""
+    from backend.routers.inventory import _get_sku_records
+
+    all_recs    = _get_sku_records()
+    sku_set     = set(sku_ids)
+    recs        = [r for r in all_recs if r["sku_id"] in sku_set]
+    critical    = sum(1 for r in recs if r["reorder_urgency"] == "CRITICAL")
+    high        = sum(1 for r in recs if r["reorder_urgency"] == "HIGH")
+    return {"recommendations": recs, "critical": critical, "high": high}
+
+
+def _retrieve_one_supplier(supplier_id: str) -> tuple[str, str]:
+    from backend.rag.retriever import retrieve_supplier_context
+    ctx = retrieve_supplier_context(
+        query=f"lead time MOQ reliability performance for {supplier_id}",
+        supplier_id=supplier_id,
+    )
+    return supplier_id, ctx
+
+
+async def _stage_rag_parallel(recs: list[dict]) -> dict:
+    """Retrieve supplier context for critical/high SKUs — parallel per supplier."""
+    critical_recs = [r for r in recs if r["reorder_urgency"] in ("CRITICAL", "HIGH")][:5]
+    supplier_ids  = list({r["supplier_id"] for r in critical_recs if r.get("supplier_id")})
+
+    if not supplier_ids:
+        return {}
+
+    loop = asyncio.get_event_loop()
+    tasks = [
+        loop.run_in_executor(None, _retrieve_one_supplier, sid)
+        for sid in supplier_ids
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Map sku_id → context text for the first critical SKU per supplier
+    context: dict[str, str] = {}
+    sup_map = {sid: ctx for item in results
+               if not isinstance(item, Exception)
+               for sid, ctx in [item]}
+
+    for rec in critical_recs:
+        sid = rec.get("supplier_id", "")
+        if sid in sup_map:
+            context[rec["sku_id"]] = sup_map[sid]
+
+    return context
+
+
+def _build_fallback_report(recs: list[dict]) -> str:
+    critical = [r for r in recs if r["reorder_urgency"] == "CRITICAL"]
+    high     = [r for r in recs if r["reorder_urgency"] == "HIGH"]
+    lines    = [
+        f"ChainIQ Analysis — {len(recs)} SKUs reviewed.",
+        f"{len(critical)} CRITICAL, {len(high)} HIGH urgency items.",
+        "",
+        "Immediate actions required:",
+    ]
+    for r in (critical + high)[:5]:
+        lines.append(
+            f"• {r['sku_id']}: Order {int(r['recommended_order_qty'])} units "
+            f"(stockout in {r['days_until_stockout']:.0f} days)"
+        )
+    return "\n".join(lines)
+
+
+def _call_groq_sync(recs: list[dict], context: dict) -> str:
+    """Synchronous Groq call — wraps existing report_agent prompt logic."""
+    import json as _json
+    from groq import Groq
+    from backend.config import get_settings
+    from backend.agents.report_agent import _build_prompt
+
+    settings = get_settings()
+    client   = Groq(api_key=settings.groq_api_key)
+
+    # Build minimal state dict compatible with _build_prompt
+    state = {
+        "inventory_recommendations": recs,
+        "supplier_context":          context,
+    }
+    prompt = _build_prompt(state)  # type: ignore[arg-type]
+
+    response = client.chat.completions.create(
+        model=settings.groq_model,
+        messages=[
+            {
+                "role":    "system",
+                "content": "You are ChainIQ, an expert AI supply chain analyst. Be precise, data-driven, and actionable.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.3,
+        max_tokens=1200,
+    )
+    return response.choices[0].message.content
+
+
+# Shared report cache (also used by report_agent.py LangGraph path)
+from backend.agents.report_agent import _report_cache, _cache_key as _report_key
+
+
+async def _stage_report(recs: list[dict], context: dict) -> tuple[str, bool]:
+    """
+    Generate LLM report with:
+    1. Process-level cache check (instant on repeat)
+    2. Async Groq call with 20s timeout
+    3. Graceful fallback if Groq times out or errors
+    """
+    # Re-use same cache key logic as LangGraph report_agent
+    from backend.agents.state import ChainIQState
+    dummy_state: ChainIQState = {  # type: ignore[assignment]
+        "run_id":                    "",
+        "sku_ids":                   [],
+        "include_rag_context":       True,
+        "forecast_results":          [],
+        "forecast_error":            None,
+        "inventory_recommendations": recs,
+        "inventory_error":           None,
+        "supplier_context":          context,
+        "rag_error":                 None,
+        "report_text":               None,
+        "report_error":              None,
+        "status":                    "RUNNING",
+        "skus_analyzed":             len(recs),
+        "errors":                    [],
+    }
+    key = _report_key(dummy_state)
+    if key in _report_cache:
+        return _report_cache[key], True
+
+    loop = asyncio.get_event_loop()
+    try:
+        text = await asyncio.wait_for(
+            loop.run_in_executor(None, _call_groq_sync, recs, context),
+            timeout=_GROQ_TIMEOUT,
+        )
+        _report_cache[key] = text
+        return text, False
+    except asyncio.TimeoutError:
+        return _build_fallback_report(recs), False
+    except Exception:
+        return _build_fallback_report(recs), False
+
+
+# ── Main pipeline ─────────────────────────────────────────────────────────────
 
 async def _pipeline(sku_ids: list[str], include_rag: bool) -> AsyncIterator[str]:
     run_id  = str(uuid.uuid4())
     started = time.time()
+    loop    = asyncio.get_event_loop()
 
-    yield await _evt("run_started", run_id=run_id, sku_count=len(sku_ids))
-    await asyncio.sleep(0.02)
+    yield _evt("run_started", run_id=run_id, sku_count=len(sku_ids))
 
-    # ── Forecasting ──────────────────────────────────────────────────────────
-    yield await _evt("forecasting_start", message="XGBoost demand forecasting", run_id=run_id)
+    # ── Stage 1: Forecast ────────────────────────────────────────────────────
+    yield _evt("forecasting_start", message="XGBoost demand forecasting", run_id=run_id)
     t0 = time.time()
-    forecast_cache_hits = 0
     try:
-        from backend.routers.forecast import get_predictor
-        from backend.ml.predictor import _prediction_cache
-        predictor = get_predictor()
-        done_fc, fail_fc = 0, 0
-        for sid in sku_ids:
-            try:
-                was_cached = sid in _prediction_cache
-                predictor.predict_sku(sid)
-                if was_cached:
-                    forecast_cache_hits += 1
-                done_fc += 1
-            except Exception:
-                fail_fc += 1
-        yield await _evt(
+        fc = await loop.run_in_executor(None, _stage_forecast, sku_ids)
+        yield _evt(
             "forecasting_complete",
-            skus_processed=done_fc,
-            skus_failed=fail_fc,
+            skus_processed=len(fc["results"]),
+            skus_failed=len(sku_ids) - len(fc["results"]),
             duration_ms=int((time.time() - t0) * 1000),
-            cache_hits=forecast_cache_hits,
-            cache_misses=done_fc - forecast_cache_hits,
+            cache_hits=fc["hits"],
+            cache_misses=fc["misses"],
         )
     except Exception as ex:
-        yield await _evt("forecasting_error", error=str(ex))
-    await asyncio.sleep(0.02)
+        yield _evt("forecasting_error", error=str(ex))
+        fc = {"results": [], "hits": 0, "misses": 0}
 
-    # ── Inventory ────────────────────────────────────────────────────────────
+    # ── Stage 2: Inventory ───────────────────────────────────────────────────
     t0 = time.time()
     try:
-        from backend.routers.inventory import _get_df
-        from backend.agents.inventory_agent import (
-            calc_safety_stock, calc_reorder_point,
-            calc_days_until_stockout, classify_urgency,
-        )
-        import pandas as pd
-
-        df  = _get_df()
-        lat = df.sort_values("date").groupby("sku_id").last().reset_index()
-        cut = df["date"].max() - pd.Timedelta(days=30)
-        st  = (
-            df[df["date"] >= cut]
-            .groupby("sku_id")["units_sold"]
-            .agg(avg_daily="mean", std_daily="std")
-            .fillna(0)
-        )
-        mg   = lat.set_index("sku_id").join(st)
-        crit = hi = 0
-        for sid in sku_ids:
-            if sid not in mg.index:
-                continue
-            r   = mg.loc[sid]
-            avg = float(r.get("avg_daily", 10))
-            std = float(r.get("std_daily", avg * 0.2))
-            lt  = int(r.get("lead_time_days", 7))
-            stk = float(r.get("stock_level", 0))
-            ss  = calc_safety_stock(std, lt)
-            rop = calc_reorder_point(avg, lt, ss)
-            dus = calc_days_until_stockout(stk, avg)
-            urg = classify_urgency(dus, lt, stk, rop)
-            if urg == "CRITICAL":
-                crit += 1
-            elif urg == "HIGH":
-                hi += 1
-        yield await _evt(
+        inv = await loop.run_in_executor(None, _stage_inventory, sku_ids)
+        yield _evt(
             "inventory_complete",
-            critical=crit,
-            high=hi,
+            critical=inv["critical"],
+            high=inv["high"],
             duration_ms=int((time.time() - t0) * 1000),
         )
+        recs = inv["recommendations"]
     except Exception as ex:
-        yield await _evt("inventory_error", error=str(ex))
-    await asyncio.sleep(0.02)
+        yield _evt("inventory_error", error=str(ex))
+        recs = []
 
-    # ── RAG ──────────────────────────────────────────────────────────────────
-    if include_rag:
+    # ── Stage 3: RAG (parallel per supplier) ────────────────────────────────
+    context: dict = {}
+    if include_rag and recs:
         t0 = time.time()
         try:
+            context = await _stage_rag_parallel(recs)
             from backend.rag.vectorstore import collection_size
-            n = collection_size()
-            await asyncio.sleep(0.05)
-            yield await _evt("rag_complete", chunks=n, duration_ms=int((time.time() - t0) * 1000))
+            yield _evt(
+                "rag_complete",
+                chunks=collection_size(),
+                suppliers_retrieved=len(set(context.values()).__class__()),
+                duration_ms=int((time.time() - t0) * 1000),
+            )
         except Exception as ex:
-            yield await _evt("rag_error", error=str(ex))
-        await asyncio.sleep(0.02)
+            yield _evt("rag_error", error=str(ex))
 
-    # ── Full LangGraph pipeline (report) ─────────────────────────────────────
+    # ── Stage 4: LLM Report (with timeout + cache) ───────────────────────────
     t0 = time.time()
     try:
-        from backend.agents.graph import get_chain_graph
-        from backend.agents.state import ChainIQState
+        report_text, cache_hit = await _stage_report(recs, context)
+
+        # Store result for /agent/runs retrieval
         from backend.schemas import AgentRunResponse, InventoryRecommendationResponse
         from backend.store import _run_cache
 
-        initial_state: ChainIQState = {
-            "run_id":                    run_id,
-            "sku_ids":                   sku_ids,
-            "include_rag_context":       include_rag,
-            "forecast_results":          [],
-            "forecast_error":            None,
-            "inventory_recommendations": [],
-            "inventory_error":           None,
-            "supplier_context":          {},
-            "rag_error":                 None,
-            "report_text":               None,
-            "report_error":              None,
-            "status":                    "RUNNING",
-            "skus_analyzed":             0,
-            "errors":                    [],
-        }
-
-        loop  = asyncio.get_event_loop()
-        final = await loop.run_in_executor(None, get_chain_graph().invoke, initial_state)
-
-        recs   = [InventoryRecommendationResponse(**r) for r in final["inventory_recommendations"]]
-        result = AgentRunResponse(
+        rec_objs = [InventoryRecommendationResponse(**r) for r in recs]
+        _run_cache[run_id] = AgentRunResponse(
             run_id=run_id,
-            status=final["status"],
-            skus_analyzed=final["skus_analyzed"],
-            report_text=final.get("report_text"),
-            recommendations=recs,
+            status="DONE",
+            skus_analyzed=len(recs),
+            report_text=report_text,
+            recommendations=rec_objs,
             created_at=datetime.utcnow(),
             completed_at=datetime.utcnow(),
         )
-        _run_cache[run_id] = result
 
-        critical_count = sum(
-            1 for r in final["inventory_recommendations"]
-            if r["reorder_urgency"] == "CRITICAL"
-        )
-        report_cache_hit = final.get("_report_cache_hit", False)
-        yield await _evt(
+        critical_count = sum(1 for r in recs if r["reorder_urgency"] == "CRITICAL")
+        yield _evt(
             "report_complete",
             run_id=run_id,
-            skus_analyzed=final.get("skus_analyzed", len(sku_ids)),
+            skus_analyzed=len(recs),
             critical=critical_count,
             duration_ms=int((time.time() - t0) * 1000),
-            cache_hit=report_cache_hit,
+            cache_hit=cache_hit,
         )
     except Exception as ex:
-        yield await _evt("report_error", error=str(ex))
+        yield _evt("report_error", error=str(ex))
 
-    yield await _evt("done", run_id=run_id, total_ms=int((time.time() - started) * 1000))
+    yield _evt("done", run_id=run_id, total_ms=int((time.time() - started) * 1000))
 
 
 @router.get("/analyze")
