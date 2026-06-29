@@ -3,10 +3,6 @@ import remarkGfm from "remark-gfm";
 import { Download, FileText } from "lucide-react";
 
 function exportPDF(markdown) {
-  const w = window.open("", "_blank");
-  if (!w) return;
-
-  // Convert markdown headings, bold, lists to basic HTML for print
   const html = markdown
     .replace(/^### (.+)$/gm, "<h3>$1</h3>")
     .replace(/^## (.+)$/gm, "<h2>$1</h2>")
@@ -14,13 +10,12 @@ function exportPDF(markdown) {
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.+?)\*/g, "<em>$1</em>")
     .replace(/^[-•] (.+)$/gm, "<li>$1</li>")
-    .replace(/(<li>[\s\S]+?<\/li>)/g, "<ul>$1</ul>")
-    .replace(/\n\n/g, "</p><p>")
-    .replace(/^(.+)$/gm, (line) =>
-      line.startsWith("<") ? line : `<p>${line}</p>`
-    );
+    .replace(/(<li>.*?<\/li>\n?)+/gs, (m) => `<ul>${m}</ul>`)
+    .replace(/\n\n+/g, "</p><p>")
+    .replace(/^(?!<[huptl])(.+)$/gm, (line) => `<p>${line}</p>`);
 
-  w.document.write(`<!DOCTYPE html>
+  // Embed print() inside the popup so the main page is never blocked
+  const fullHtml = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8"/>
@@ -29,11 +24,8 @@ function exportPDF(markdown) {
     body { font-family: "Segoe UI", Arial, sans-serif; max-width: 800px; margin: 40px auto; color: #111; line-height: 1.6; }
     h1, h2, h3 { color: #1a1a2e; margin-top: 1.5em; }
     h1 { font-size: 1.6rem; border-bottom: 2px solid #1a1a2e; padding-bottom: .4rem; }
-    h2 { font-size: 1.3rem; }
-    h3 { font-size: 1.1rem; }
-    p  { margin: .75em 0; }
-    ul { padding-left: 1.5rem; margin: .5em 0; }
-    li { margin-bottom: .3em; }
+    h2 { font-size: 1.3rem; } h3 { font-size: 1.1rem; }
+    p { margin: .75em 0; } ul { padding-left: 1.5rem; margin: .5em 0; } li { margin-bottom: .3em; }
     strong { font-weight: 600; }
     table { border-collapse: collapse; width: 100%; margin: 1em 0; }
     th { background: #1a1a2e; color: white; padding: 8px 12px; text-align: left; }
@@ -41,7 +33,7 @@ function exportPDF(markdown) {
     code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-size: .9em; }
     .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2em; border-bottom: 1px solid #ddd; padding-bottom: 1em; }
     .brand { font-size: 1.1rem; font-weight: 700; color: #1a1a2e; }
-    .meta  { font-size: .8rem; color: #666; }
+    .meta { font-size: .8rem; color: #666; }
     @media print { @page { margin: 2cm } }
   </style>
 </head>
@@ -51,10 +43,15 @@ function exportPDF(markdown) {
     <span class="meta">Generated ${new Date().toLocaleString()}</span>
   </div>
   ${html}
+  <script>window.addEventListener('load', function() { setTimeout(window.print, 150); });<\/script>
 </body>
-</html>`);
-  w.document.close();
-  w.print();
+</html>`;
+
+  const blob = new Blob([fullHtml], { type: "text/html" });
+  const url  = URL.createObjectURL(blob);
+  const win  = window.open(url, "_blank");
+  if (win) setTimeout(() => URL.revokeObjectURL(url), 120_000);
+  else     URL.revokeObjectURL(url);
 }
 
 export default function ReportViewer({ markdown = "", runId = "" }) {

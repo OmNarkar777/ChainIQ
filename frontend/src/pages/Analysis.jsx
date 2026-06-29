@@ -13,6 +13,83 @@ import {
 // SKU list from snapshot — instant, no backend needed
 const SNAPSHOT_SKUS = SNAPSHOT.skuIds;
 
+// O(1) SKU detail lookup for demo report generation
+const INV_DETAIL = Object.fromEntries(SNAPSHOT.inventory.map((r) => [r.sku_id, r]));
+
+// Generates a unique, data-driven executive report per SKU using precomputed snapshot data.
+// Every field is SKU-specific so reports always differ between SKUs.
+function generateSkuReport(skuId) {
+  const rec = INV_DETAIL[skuId];
+  const fc  = SNAPSHOT.forecasts[skuId];
+  if (!rec || !fc) return SNAPSHOT.demo.report;
+
+  const isCritical  = rec.reorder_urgency === "CRITICAL";
+  const isHigh      = rec.reorder_urgency === "HIGH";
+  const orderCost   = (rec.recommended_order_qty * rec.unit_cost).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const shortfall   = rec.days_until_stockout < rec.lead_time_days;
+  const gapAbs      = Math.abs(rec.days_until_stockout - rec.lead_time_days).toFixed(1);
+  const bufferDays  = (rec.safety_stock / Math.max(rec.avg_daily_demand, 0.1)).toFixed(1);
+  const topFeature  = fc.top_features?.[0]?.feature ?? "lag_7d";
+  const topWeight   = ((fc.top_features?.[0]?.importance ?? 0.3) * 100).toFixed(0);
+  const ciSpreadPct = fc.predicted_units > 0
+    ? (((fc.upper_bound - fc.lower_bound) / fc.predicted_units) * 100).toFixed(0)
+    : "N/A";
+  const grossMargin = rec.unit_price > 0
+    ? `${(((rec.unit_price - rec.unit_cost) / rec.unit_price) * 100).toFixed(1)}%`
+    : "N/A";
+  const urgencyAdverb = isCritical ? "immediate" : isHigh ? "urgent" : "proactive";
+  const featureNarrative = topFeature.includes("lag")
+    ? "strong recent demand momentum carrying forward"
+    : topFeature.includes("season") || topFeature.includes("month")
+    ? "seasonal demand patterns driving the outlook"
+    : "promotional and market-driven demand signals";
+
+  return `## Executive Summary
+
+ChainIQ has completed a deep-dive analysis on **${rec.sku_id}** (${rec.sku_name}), a **${rec.category}** SKU stocked at **${rec.warehouse_id}**.
+
+The XGBoost demand model (MAPE: **${fc.mape_estimate?.toFixed(1) ?? "N/A"}%**) projects **${fc.predicted_units.toFixed(0)} units** of demand over the next 7 days, with an 80% confidence interval of **${fc.lower_bound.toFixed(0)}–${fc.upper_bound.toFixed(0)} units** (±${ciSpreadPct}% spread). The dominant predictive signal is **${topFeature}** at ${topWeight}% model weight, reflecting ${featureNarrative}.
+
+Current on-hand inventory stands at **${rec.current_stock.toFixed(0)} units** against a daily burn rate of **${rec.avg_daily_demand.toFixed(1)} units/day**, giving a coverage window of **${rec.days_until_stockout.toFixed(1)} days**. The supplier (**${rec.supplier_id}**) requires **${rec.lead_time_days} days** lead time. ${shortfall ? `⚠️ This creates a **${gapAbs}-day stockout gap** — stock runs out before the replenishment order arrives.` : `This leaves a ${gapAbs}-day buffer before lead-time expiry.`} Inventory status: **${rec.reorder_urgency}** — ${urgencyAdverb} action required.
+
+## Immediate Actions Required
+
+1. **Place a purchase order for ${rec.recommended_order_qty.toFixed(0)} units from ${rec.supplier_id} ${isCritical ? "within 24 hours" : isHigh ? "within 48 hours" : "this week"}.** At $${rec.unit_cost.toFixed(2)}/unit, order value: **$${orderCost}**. Economic Order Quantity (EOQ) for this SKU is ${rec.eoq.toFixed(0)} units; the recommended quantity is ${rec.recommended_order_qty > rec.eoq ? "elevated above EOQ due to urgency" : "aligned with EOQ"}.
+
+2. **${shortfall
+    ? `Initiate an emergency stock transfer from the nearest warehouse or arrange expedited freight to cover the ${gapAbs}-day gap. Safety stock of ${rec.safety_stock.toFixed(0)} units provides only ${bufferDays} days of emergency buffer — insufficient for the ${rec.lead_time_days}-day replenishment cycle.`
+    : `Confirm the lead time commitment with ${rec.supplier_id}. The ${rec.safety_stock.toFixed(0)}-unit safety stock provides ${bufferDays} days of emergency coverage, which is ${parseFloat(bufferDays) > rec.lead_time_days ? "adequate" : "marginal"} for the ${rec.lead_time_days}-day lead time.`}**
+
+3. **Recalibrate the reorder trigger at ${rec.reorder_point.toFixed(0)} units** in the WMS for ${rec.warehouse_id}. Given forecast uncertainty of ±${ciSpreadPct}%, ${parseFloat(ciSpreadPct) > 30 ? "consider raising safety stock to absorb demand volatility" : "the current safety stock level is appropriate"}.
+
+## Supplier & Financial Context
+
+**${rec.supplier_id}** is the sole sourcing partner for **${rec.sku_id}** with a lead time of **${rec.lead_time_days} days**. ${rec.lead_time_days > 10 ? `This above-benchmark lead time (>10 days) creates material supply risk. Qualifying a secondary supplier with a shorter lead window is recommended for this category.` : `The lead time is within the 7–10 day benchmark, manageable with the existing safety stock regime.`}
+
+Unit economics: list price **$${(rec.unit_price ?? 0).toFixed(2)}** vs. cost **$${rec.unit_cost.toFixed(2)}** — gross margin **${grossMargin}**, making stockout avoidance financially critical. Stockout risk score: **${rec.stockout_risk_pct.toFixed(0)}%**.
+
+## Risk Summary
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| 7-day forecast | ${fc.predicted_units.toFixed(0)} units | 80% CI: ${fc.lower_bound.toFixed(0)}–${fc.upper_bound.toFixed(0)} |
+| Stock coverage | ${rec.days_until_stockout.toFixed(1)} days | ${shortfall ? "⚠️ Below lead time" : "✓ Above lead time"} |
+| Safety stock | ${rec.safety_stock.toFixed(0)} units | ${bufferDays}d buffer |
+| Stockout risk | ${rec.stockout_risk_pct.toFixed(0)}% | ${rec.stockout_risk_pct > 70 ? "HIGH" : rec.stockout_risk_pct > 40 ? "MEDIUM" : "LOW"} |
+| Model accuracy | ${fc.mape_estimate?.toFixed(1) ?? "N/A"}% MAPE | ${(fc.mape_estimate ?? 99) < 15 ? "✓ Strong" : "⚠️ Moderate"} |
+`;}
+
+// Realistic demo metrics for single-SKU mode (faster than 300-SKU)
+const SINGLE_DEMO_METRICS = {
+  forecast_ms: 11,
+  forecast_cache_hits: 1,
+  inventory_ms: 7,
+  rag_ms: 193,
+  llm_ms: 0,
+  llm_cache_hit: false,
+  total_ms: 211,
+};
+
 // ── SKU Combobox ─────────────────────────────────────────────────────────────
 
 function SKUCombobox({ skus, value, onChange }) {
@@ -179,9 +256,17 @@ export default function Analysis() {
     setAnimatedStages(new Set(["forecast", "inventory", "rag", "llm", "complete"]));
   };
 
+  // Cleanup SSE + demo timer on unmount
+  useEffect(() => () => {
+    if (stopRef.current)   stopRef.current();
+    if (demoTimer.current) clearTimeout(demoTimer.current);
+  }, []);
+
   const handleRun = () => {
-    const skuIds = mode === "single" ? (selectedSku ? [selectedSku] : []) : [];
-    if (mode === "single" && !selectedSku) return;
+    const currentMode = mode;
+    const currentSku  = selectedSku;
+    const skuIds      = currentMode === "single" ? (currentSku ? [currentSku] : []) : [];
+    if (currentMode === "single" && !currentSku) return;
     if (stopRef.current)   stopRef.current();
     if (demoTimer.current) clearTimeout(demoTimer.current);
 
@@ -193,23 +278,32 @@ export default function Analysis() {
     setResult(null);
     setError(null);
 
-    // If backend doesn't respond with a result within 30s, fall back to demo
+    // Helper: build demo result with per-SKU content when in single mode
+    const buildDemoFallback = (runId) => {
+      const isSingle = currentMode === "single" && currentSku;
+      return {
+        result: {
+          run_id:          runId,
+          status:          "DONE",
+          skus_analyzed:   isSingle ? 1 : SNAPSHOT.demo.skus_analyzed,
+          report_text:     isSingle ? generateSkuReport(currentSku) : SNAPSHOT.demo.report,
+          recommendations: isSingle
+            ? SNAPSHOT.inventory.filter((r) => r.sku_id === currentSku)
+            : SNAPSHOT.demo.recommendations,
+        },
+        metrics: isSingle ? SINGLE_DEMO_METRICS : SNAPSHOT.demo.metrics,
+      };
+    };
+
+    // 5-second timeout — covers Render cold-start; demo result shown if backend doesn't respond
     demoTimer.current = setTimeout(() => {
       if (stopRef.current) stopRef.current();
-      showDemoResult(
-        {
-          run_id:          "demo-fallback",
-          status:          "DONE",
-          skus_analyzed:   SNAPSHOT.demo.skus_analyzed,
-          report_text:     SNAPSHOT.demo.report,
-          recommendations: SNAPSHOT.demo.recommendations,
-        },
-        SNAPSHOT.demo.metrics,
-      );
-    }, 30_000);
+      const { result: r, metrics: m } = buildDemoFallback("demo-timeout");
+      showDemoResult(r, m);
+    }, 5_000);
 
     const stop = streamAnalysis(
-      { sku_ids: skuIds, analyze_all: mode === "all", include_rag: includeRag },
+      { sku_ids: skuIds, analyze_all: currentMode === "all", include_rag: includeRag },
       (type, data) => {
         if (type === "forecasting_complete") {
           metricsRef.current.forecast_ms         = data.duration_ms;
@@ -224,7 +318,6 @@ export default function Analysis() {
           clearTimeout(demoTimer.current);
 
           if (data.run_id) {
-            // Fetch the stored run for full recommendations
             import("../api/client.js").then(({ api }) =>
               api.getRun(data.run_id)
                 .then((r) => { setResult(r); setMetrics({ ...metricsRef.current }); })
@@ -238,19 +331,10 @@ export default function Analysis() {
         }
       },
       () => { clearTimeout(demoTimer.current); setRunning(false); },
-      (e) => {
+      () => {
         clearTimeout(demoTimer.current);
-        // Stream failed — fall back to demo immediately
-        showDemoResult(
-          {
-            run_id:          "demo-offline",
-            status:          "DONE",
-            skus_analyzed:   SNAPSHOT.demo.skus_analyzed,
-            report_text:     SNAPSHOT.demo.report,
-            recommendations: SNAPSHOT.demo.recommendations,
-          },
-          SNAPSHOT.demo.metrics,
-        );
+        const { result: r, metrics: m } = buildDemoFallback("demo-offline");
+        showDemoResult(r, m);
       },
     );
 

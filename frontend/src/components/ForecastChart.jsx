@@ -31,7 +31,8 @@ export default function ForecastChart({ history = [], forecast = null, skuId = "
   }
 
   const histPoints = history.map((h) => ({ date: h.date, actual: h.units_sold }));
-  const today      = history.at(-1)?.date ?? "Today";
+  // Use a real date fallback — "Today" is not a valid Date string and crashes toISOString()
+  const today      = history.at(-1)?.date ?? new Date().toISOString().slice(0, 10);
 
   let data = [...histPoints];
   if (forecast) {

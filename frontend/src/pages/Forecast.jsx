@@ -29,7 +29,8 @@ export default function Forecast() {
   const [forecast, setForecast] = useState(() => SNAPSHOT.forecasts[defaultSku] ?? null);
   const [detail,   setDetail]   = useState(() => SKU_DETAIL[defaultSku] ?? null);
   const [history,  setHistory]  = useState([]);
-  const [histLoading, setHistLoading] = useState(false);
+  // Start true so the chart skeleton shows before the first useEffect runs
+  const [histLoading, setHistLoading] = useState(true);
 
   // Load history chart data from backend (background — stats already visible)
   const loadHistory = useCallback((id) => {

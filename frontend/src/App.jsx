@@ -1,6 +1,27 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, Component } from "react";
 import { Routes, Route, NavLink, Link } from "react-router-dom";
-import { LayoutDashboard, PlayCircle, Package, TrendingUp, Zap } from "lucide-react";
+import { LayoutDashboard, PlayCircle, Package, TrendingUp, Zap, AlertTriangle } from "lucide-react";
+
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="flex flex-col items-center justify-center py-32 text-center">
+        <AlertTriangle size={32} className="text-red-500 mb-4" />
+        <p className="text-zinc-300 font-mono text-sm mb-2">Something went wrong rendering this page</p>
+        <p className="text-zinc-600 font-mono text-xs mb-6 max-w-sm">{String(this.state.error.message)}</p>
+        <button
+          onClick={() => this.setState({ error: null })}
+          className="text-xs font-mono text-[#b5f23d] border border-[#b5f23d]/30 px-4 py-2 rounded hover:bg-[#b5f23d]/10 transition-colors"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+}
 
 // Route-based code splitting: each page is its own chunk.
 // The browser only downloads code for the page the user visits.
@@ -86,6 +107,7 @@ export default function App() {
       </header>
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8">
+        <ErrorBoundary>
         <Suspense fallback={<PageSkeleton />}>
           <Routes>
             <Route path="/"          element={<Dashboard />} />
@@ -95,6 +117,7 @@ export default function App() {
             <Route path="*"          element={<NotFound />} />
           </Routes>
         </Suspense>
+        </ErrorBoundary>
       </main>
 
       <footer className="border-t border-zinc-900 py-3 px-4">
