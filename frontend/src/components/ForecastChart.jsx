@@ -47,21 +47,25 @@ function buildForecastPoints(lastDate, forecast) {
   const dailyLow  = forecast.lower_bound    / 7;
   const dailyHigh = forecast.upper_bound    / 7;
 
+  // Half-width of the aggregate CI, used to build per-day bands
+  const halfWidth = (dailyHigh - dailyLow) / 2;
+
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(lastDate);
     d.setDate(d.getDate() + i + 1);
     // Deterministic wave so chart doesn't change on re-render
-    const variation  = 0.10 * Math.sin(i * 2.3 + 1.4) + 0.06 * Math.cos(i * 1.7);
-    // CI fans out ≈5 % per day (standard for rolling forecasts)
-    const fanFactor  = 1 + i * 0.05;
-    const ciLow      = Math.max(0, dailyLow  * fanFactor);
-    const ciHigh     = dailyHigh * fanFactor;
+    const variation = 0.10 * Math.sin(i * 2.3 + 1.4) + 0.06 * Math.cos(i * 1.7);
+    const fcst      = Math.max(0, Math.round(dailyMean * (1 + variation) * 10) / 10);
+    // CI fans out ≈5 % per day and is always centred on the per-day forecast value,
+    // guaranteeing ciFloor ≤ forecast ≤ ciCeiling.
+    const halfW     = Math.round(halfWidth * (1 + i * 0.05) * 10) / 10;
+    const ciFloor   = Math.max(0, Math.round((fcst - halfW) * 10) / 10);
     return {
       date:     d.toISOString().slice(0, 10),
-      forecast: Math.max(0, Math.round(dailyMean * (1 + variation) * 10) / 10),
-      // Stacked-area CI: ci_floor + ci_band renders as [ciLow, ciHigh]
-      ci_floor: Math.round(ciLow  * 10) / 10,
-      ci_band:  Math.round((ciHigh - ciLow) * 10) / 10,
+      forecast: fcst,
+      // Stacked-area CI: ci_floor + ci_band renders as [ciFloor, ciFloor + 2*halfW]
+      ci_floor: ciFloor,
+      ci_band:  Math.round(halfW * 2 * 10) / 10,
     };
   });
 }
