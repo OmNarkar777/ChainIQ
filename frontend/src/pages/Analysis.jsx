@@ -1,45 +1,40 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { api, streamAnalysis } from "../api/client.js";
+import { streamAnalysis } from "../api/client.js";
+import SNAPSHOT from "../data/snapshot.json";
 import StepIndicator from "../components/StepIndicator.jsx";
 import ReportViewer from "../components/ReportViewer.jsx";
 import InventoryTable from "../components/InventoryTable.jsx";
 import {
   Play, Loader, CheckCircle, AlertCircle,
   Brain, Database, Cpu, FileText, ChevronDown, X, Search,
-  Zap, Clock,
+  Zap, Clock, Wifi,
 } from "lucide-react";
+
+// SKU list from snapshot — instant, no backend needed
+const SNAPSHOT_SKUS = SNAPSHOT.skuIds;
 
 // ── SKU Combobox ─────────────────────────────────────────────────────────────
 
 function SKUCombobox({ skus, value, onChange }) {
-  const [query, setQuery]   = useState(value || "");
-  const [open, setOpen]     = useState(false);
-  const ref                 = useRef(null);
+  const [query, setQuery] = useState(value || "");
+  const [open,  setOpen]  = useState(false);
+  const ref               = useRef(null);
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     return skus
-      .filter(s =>
-        s.sku_id.toLowerCase().includes(q) ||
-        (s.category || "").toLowerCase().includes(q)
-      )
+      .filter((s) => s.sku_id.toLowerCase().includes(q) || (s.category || "").toLowerCase().includes(q))
       .slice(0, 30);
   }, [skus, query]);
 
-  // Close dropdown on outside click
   useEffect(() => {
     const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const select = (sku) => {
-    onChange(sku.sku_id);
-    setQuery(sku.sku_id);
-    setOpen(false);
-  };
-
-  const clear = () => { onChange(""); setQuery(""); };
+  const select = (sku) => { onChange(sku.sku_id); setQuery(sku.sku_id); setOpen(false); };
+  const clear  = () => { onChange(""); setQuery(""); };
 
   return (
     <div ref={ref} className="relative">
@@ -65,7 +60,6 @@ function SKUCombobox({ skus, value, onChange }) {
           <ChevronDown size={12} className="text-zinc-600 shrink-0" />
         )}
       </div>
-
       {open && filtered.length > 0 && (
         <div className="absolute z-50 w-full mt-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl max-h-52 overflow-y-auto">
           {filtered.map((s) => (
@@ -76,9 +70,7 @@ function SKUCombobox({ skus, value, onChange }) {
                 s.sku_id === value ? "bg-[#b5f23d]/5" : ""
               }`}
             >
-              <span className={`font-mono text-xs ${s.sku_id === value ? "text-[#b5f23d]" : "text-zinc-300"}`}>
-                {s.sku_id}
-              </span>
+              <span className={`font-mono text-xs ${s.sku_id === value ? "text-[#b5f23d]" : "text-zinc-300"}`}>{s.sku_id}</span>
               <span className="text-zinc-600 text-xs ml-4 shrink-0">{s.category}</span>
             </div>
           ))}
@@ -103,9 +95,7 @@ function MetricRow({ label, ms, cacheHit, highlight }) {
       <div className="flex items-center gap-2">
         {cacheHit != null && (
           <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
-            cacheHit
-              ? "text-[#b5f23d] bg-[#b5f23d]/10 border-[#b5f23d]/30"
-              : "text-zinc-500 bg-zinc-800 border-zinc-700"
+            cacheHit ? "text-[#b5f23d] bg-[#b5f23d]/10 border-[#b5f23d]/30" : "text-zinc-500 bg-zinc-800 border-zinc-700"
           }`}>
             {cacheHit ? "HIT" : "MISS"}
           </span>
@@ -118,7 +108,7 @@ function MetricRow({ label, ms, cacheHit, highlight }) {
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// ── Pipeline stages ───────────────────────────────────────────────────────────
 
 const PIPELINE_STAGES = [
   { icon: Cpu,      label: "XGBoost Forecast",      desc: "7-day demand prediction per SKU" },
@@ -127,31 +117,48 @@ const PIPELINE_STAGES = [
   { icon: FileText, label: "LLM Report",             desc: "Groq LLaMA 3.3 70B executive summary" },
 ];
 
-// Cosmetic animation timings (ms after run starts)
-const ANIM_TIMINGS = {
-  forecast:  150,
-  inventory: 340,
-  rag:       530,
-};
+const ANIM_TIMINGS = { forecast: 150, inventory: 340, rag: 530 };
+
+// Demo replay: animate stages then show precomputed result
+function useDemoReplay(onResult, onMetrics) {
+  return () => {
+    const delays = [
+      [150,  () => {}],
+      [400,  () => {}],
+      [700,  () => {}],
+      [3200, () => {
+        onResult({
+          run_id:          "demo-00000000",
+          status:          "DONE",
+          skus_analyzed:   SNAPSHOT.demo.skus_analyzed,
+          report_text:     SNAPSHOT.demo.report,
+          recommendations: SNAPSHOT.demo.recommendations,
+        });
+        onMetrics(SNAPSHOT.demo.metrics);
+      }],
+    ];
+    const timers = delays.map(([ms, fn]) => setTimeout(fn, ms));
+    return () => timers.forEach(clearTimeout);
+  };
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function Analysis() {
-  const [allSkus, setAllSkus]         = useState([]);
-  const [mode, setMode]               = useState("all");    // "all" | "single"
-  const [selectedSku, setSelectedSku] = useState("");
-  const [includeRag, setIncludeRag]   = useState(true);
-  const [running, setRunning]         = useState(false);
+  const [mode,         setMode]         = useState("all");
+  const [selectedSku,  setSelectedSku]  = useState("");
+  const [includeRag,   setIncludeRag]   = useState(true);
+  const [running,      setRunning]      = useState(false);
+  const [isDemo,       setIsDemo]       = useState(false);
   const [animatedStages, setAnimatedStages] = useState(new Set());
-  const [metrics, setMetrics]         = useState({});
-  const [result, setResult]           = useState(null);
-  const [error, setError]             = useState(null);
-  const metricsRef                    = useRef({});
-  const stopRef                       = useRef(null);
+  const [metrics,      setMetrics]      = useState({});
+  const [result,       setResult]       = useState(null);
+  const [error,        setError]        = useState(null);
+  const metricsRef = useRef({});
+  const stopRef    = useRef(null);
+  const demoTimer  = useRef(null);
 
-  useEffect(() => {
-    api.getSkuIds().then(setAllSkus).catch(() => {});
-  }, []);
-
-  // ── Cosmetic animation when running starts ──────────────────────────────
+  // Animate stages when running
   useEffect(() => {
     if (!running) return;
     const timers = Object.entries(ANIM_TIMINGS).map(([stage, delay]) =>
@@ -160,26 +167,46 @@ export default function Analysis() {
     return () => timers.forEach(clearTimeout);
   }, [running]);
 
-  // ── Complete LLM + Complete stages when real result arrives ─────────────
   useEffect(() => {
-    if (result) {
-      setAnimatedStages((s) => new Set([...s, "llm", "complete"]));
-    }
+    if (result) setAnimatedStages((s) => new Set([...s, "llm", "complete"]));
   }, [result]);
+
+  const showDemoResult = (demoResult, demoMetrics) => {
+    setResult(demoResult);
+    setMetrics(demoMetrics);
+    setIsDemo(true);
+    setRunning(false);
+    setAnimatedStages(new Set(["forecast", "inventory", "rag", "llm", "complete"]));
+  };
 
   const handleRun = () => {
     const skuIds = mode === "single" ? (selectedSku ? [selectedSku] : []) : [];
     if (mode === "single" && !selectedSku) return;
-
-    // Stop any previous stream
-    if (stopRef.current) stopRef.current();
+    if (stopRef.current)   stopRef.current();
+    if (demoTimer.current) clearTimeout(demoTimer.current);
 
     setRunning(true);
+    setIsDemo(false);
     setAnimatedStages(new Set());
     setMetrics({});
     metricsRef.current = {};
     setResult(null);
     setError(null);
+
+    // If backend doesn't respond with a result within 30s, fall back to demo
+    demoTimer.current = setTimeout(() => {
+      if (stopRef.current) stopRef.current();
+      showDemoResult(
+        {
+          run_id:          "demo-fallback",
+          status:          "DONE",
+          skus_analyzed:   SNAPSHOT.demo.skus_analyzed,
+          report_text:     SNAPSHOT.demo.report,
+          recommendations: SNAPSHOT.demo.recommendations,
+        },
+        SNAPSHOT.demo.metrics,
+      );
+    }, 30_000);
 
     const stop = streamAnalysis(
       { sku_ids: skuIds, analyze_all: mode === "all", include_rag: includeRag },
@@ -188,22 +215,21 @@ export default function Analysis() {
           metricsRef.current.forecast_ms         = data.duration_ms;
           metricsRef.current.forecast_cache_hits = data.cache_hits ?? 0;
         }
-        if (type === "inventory_complete") {
-          metricsRef.current.inventory_ms = data.duration_ms;
-        }
-        if (type === "rag_complete") {
-          metricsRef.current.rag_ms = data.duration_ms;
-        }
+        if (type === "inventory_complete")  metricsRef.current.inventory_ms = data.duration_ms;
+        if (type === "rag_complete")        metricsRef.current.rag_ms       = data.duration_ms;
         if (type === "report_complete") {
           metricsRef.current.llm_ms        = data.duration_ms;
           metricsRef.current.llm_cache_hit = data.cache_hit ?? false;
+
+          clearTimeout(demoTimer.current);
+
           if (data.run_id) {
-            api.getRun(data.run_id)
-              .then((r) => {
-                setResult(r);
-                setMetrics({ ...metricsRef.current });
-              })
-              .catch(() => {});
+            // Fetch the stored run for full recommendations
+            import("../api/client.js").then(({ api }) =>
+              api.getRun(data.run_id)
+                .then((r) => { setResult(r); setMetrics({ ...metricsRef.current }); })
+                .catch(() => {})
+            );
           }
         }
         if (type === "done") {
@@ -211,15 +237,28 @@ export default function Analysis() {
           setMetrics({ ...metricsRef.current });
         }
       },
-      () => setRunning(false),
-      (e) => { setError(e.message); setRunning(false); }
+      () => { clearTimeout(demoTimer.current); setRunning(false); },
+      (e) => {
+        clearTimeout(demoTimer.current);
+        // Stream failed — fall back to demo immediately
+        showDemoResult(
+          {
+            run_id:          "demo-offline",
+            status:          "DONE",
+            skus_analyzed:   SNAPSHOT.demo.skus_analyzed,
+            report_text:     SNAPSHOT.demo.report,
+            recommendations: SNAPSHOT.demo.recommendations,
+          },
+          SNAPSHOT.demo.metrics,
+        );
+      },
     );
 
     stopRef.current = stop;
   };
 
-  const canRun    = !running && (mode === "all" || !!selectedSku);
-  const skuCount  = mode === "all" ? (allSkus.length || 300) : 1;
+  const canRun     = !running && (mode === "all" || !!selectedSku);
+  const skuCount   = mode === "all" ? SNAPSHOT_SKUS.length : 1;
   const hasMetrics = Object.keys(metrics).length > 0;
   const isStarted  = running || result !== null || error !== null;
 
@@ -235,48 +274,24 @@ export default function Analysis() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* ── Left panel ── */}
         <div className="space-y-4">
-          {/* Configuration */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 space-y-4">
-            <p className="text-xs font-mono text-zinc-500 uppercase tracking-wider">
-              Configuration
-            </p>
+            <p className="text-xs font-mono text-zinc-500 uppercase tracking-wider">Configuration</p>
 
-            {/* Mode selector */}
             <div className="space-y-2">
               <label className={`flex items-start gap-2.5 cursor-pointer p-2.5 rounded-lg border transition-all ${
-                mode === "all"
-                  ? "border-[#b5f23d]/40 bg-[#b5f23d]/5"
-                  : "border-zinc-800 hover:border-zinc-700"
+                mode === "all" ? "border-[#b5f23d]/40 bg-[#b5f23d]/5" : "border-zinc-800 hover:border-zinc-700"
               }`}>
-                <input
-                  type="radio"
-                  name="mode"
-                  value="all"
-                  checked={mode === "all"}
-                  onChange={() => setMode("all")}
-                  className="mt-0.5 accent-[#b5f23d]"
-                />
+                <input type="radio" name="mode" value="all" checked={mode === "all"} onChange={() => setMode("all")} className="mt-0.5 accent-[#b5f23d]" />
                 <div>
-                  <p className="text-sm font-mono text-zinc-200">
-                    Analyse all {allSkus.length || 300} SKUs
-                  </p>
+                  <p className="text-sm font-mono text-zinc-200">Analyse all {SNAPSHOT_SKUS.length} SKUs</p>
                   <p className="text-xs text-zinc-600 mt-0.5">Full portfolio scan</p>
                 </div>
               </label>
 
               <label className={`flex items-start gap-2.5 cursor-pointer p-2.5 rounded-lg border transition-all ${
-                mode === "single"
-                  ? "border-[#b5f23d]/40 bg-[#b5f23d]/5"
-                  : "border-zinc-800 hover:border-zinc-700"
+                mode === "single" ? "border-[#b5f23d]/40 bg-[#b5f23d]/5" : "border-zinc-800 hover:border-zinc-700"
               }`}>
-                <input
-                  type="radio"
-                  name="mode"
-                  value="single"
-                  checked={mode === "single"}
-                  onChange={() => setMode("single")}
-                  className="mt-0.5 accent-[#b5f23d]"
-                />
+                <input type="radio" name="mode" value="single" checked={mode === "single"} onChange={() => setMode("single")} className="mt-0.5 accent-[#b5f23d]" />
                 <div>
                   <p className="text-sm font-mono text-zinc-200">Analyse selected SKU</p>
                   <p className="text-xs text-zinc-600 mt-0.5">Single SKU deep-dive</p>
@@ -284,80 +299,53 @@ export default function Analysis() {
               </label>
             </div>
 
-            {/* SKU combobox — only in single mode */}
             {mode === "single" && (
               <div>
                 <p className="text-xs font-mono text-zinc-600 mb-1.5">Select SKU</p>
-                <SKUCombobox
-                  skus={allSkus}
-                  value={selectedSku}
-                  onChange={setSelectedSku}
-                />
-                {selectedSku && (
-                  <p className="text-xs font-mono text-[#b5f23d] mt-1.5">
-                    ✓ {selectedSku} selected
-                  </p>
-                )}
+                <SKUCombobox skus={SNAPSHOT_SKUS} value={selectedSku} onChange={setSelectedSku} />
+                {selectedSku && <p className="text-xs font-mono text-[#b5f23d] mt-1.5">✓ {selectedSku} selected</p>}
               </div>
             )}
 
-            {/* RAG toggle */}
             <label className="flex items-start gap-2.5 cursor-pointer group">
-              <input
-                type="checkbox"
-                checked={includeRag}
-                onChange={(e) => setIncludeRag(e.target.checked)}
-                className="w-3.5 h-3.5 mt-0.5 accent-[#b5f23d]"
-              />
+              <input type="checkbox" checked={includeRag} onChange={(e) => setIncludeRag(e.target.checked)} className="w-3.5 h-3.5 mt-0.5 accent-[#b5f23d]" />
               <div>
-                <p className="text-sm text-zinc-300 group-hover:text-zinc-200 transition-colors">
-                  Include supplier context (RAG)
-                </p>
-                <p className="text-xs text-zinc-600 mt-0.5">
-                  ChromaDB semantic search
-                </p>
+                <p className="text-sm text-zinc-300 group-hover:text-zinc-200 transition-colors">Include supplier context (RAG)</p>
+                <p className="text-xs text-zinc-600 mt-0.5">ChromaDB semantic search</p>
               </div>
             </label>
 
-            {/* Run button */}
             <button
               onClick={handleRun}
               disabled={!canRun}
               className={`w-full flex items-center justify-center gap-2 py-2.5 rounded font-mono text-sm font-semibold transition-all ${
-                canRun
-                  ? "bg-[#b5f23d] text-zinc-950 hover:opacity-90 shadow-[0_0_20px_rgba(181,242,61,0.15)]"
-                  : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
+                canRun ? "bg-[#b5f23d] text-zinc-950 hover:opacity-90 shadow-[0_0_20px_rgba(181,242,61,0.15)]" : "bg-zinc-800 text-zinc-600 cursor-not-allowed"
               }`}
             >
-              {running ? (
-                <><Loader size={13} className="animate-spin" /> Running…</>
-              ) : (
-                <><Play size={13} /> Run Analysis ({skuCount} SKU{skuCount !== 1 ? "s" : ""})</>
-              )}
+              {running
+                ? <><Loader size={13} className="animate-spin" /> Running…</>
+                : <><Play size={13} /> Run Analysis ({skuCount} SKU{skuCount !== 1 ? "s" : ""})</>}
             </button>
 
-            {error && (
-              <div className="bg-red-950/50 border border-red-800 rounded-lg p-3 flex items-start gap-2">
-                <AlertCircle size={13} className="text-red-400 mt-0.5 shrink-0" />
-                <p className="text-xs text-red-400 font-mono break-all">{error}</p>
-              </div>
-            )}
-
             {result && !running && (
-              <div className="bg-[#b5f23d]/5 border border-[#b5f23d]/20 rounded-lg p-3 flex items-center gap-2">
-                <CheckCircle size={13} className="text-[#b5f23d]" />
-                <p className="text-xs text-[#b5f23d] font-mono">
-                  {result.skus_analyzed} SKUs analysed
+              <div className={`border rounded-lg p-3 flex items-center gap-2 ${
+                isDemo ? "bg-zinc-800/50 border-zinc-700" : "bg-[#b5f23d]/5 border-[#b5f23d]/20"
+              }`}>
+                {isDemo
+                  ? <Wifi size={13} className="text-zinc-500" />
+                  : <CheckCircle size={13} className="text-[#b5f23d]" />}
+                <p className={`text-xs font-mono ${isDemo ? "text-zinc-500" : "text-[#b5f23d]"}`}>
+                  {isDemo
+                    ? `Demo · ${result.skus_analyzed} SKUs (backend offline)`
+                    : `${result.skus_analyzed} SKUs analysed`}
                 </p>
               </div>
             )}
           </div>
 
-          {/* Pipeline architecture diagram */}
+          {/* Pipeline architecture */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-            <p className="text-xs font-mono text-zinc-500 uppercase tracking-wider mb-3">
-              Pipeline Architecture
-            </p>
+            <p className="text-xs font-mono text-zinc-500 uppercase tracking-wider mb-3">Pipeline Architecture</p>
             <div className="space-y-2.5">
               {PIPELINE_STAGES.map((stage, i) => (
                 <div key={i} className="flex items-start gap-3">
@@ -373,14 +361,12 @@ export default function Analysis() {
             </div>
           </div>
 
-          {/* Execution metrics — shown after run */}
           {hasMetrics && (
             <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
               <div className="flex items-center gap-2 mb-3">
                 <Clock size={12} className="text-zinc-500" />
-                <p className="text-xs font-mono text-zinc-500 uppercase tracking-wider">
-                  Execution Metrics
-                </p>
+                <p className="text-xs font-mono text-zinc-500 uppercase tracking-wider">Execution Metrics</p>
+                {isDemo && <span className="text-[10px] font-mono text-zinc-600 border border-zinc-700 px-1.5 rounded ml-auto">demo</span>}
               </div>
               <MetricRow label="Forecast"  ms={metrics.forecast_ms}  cacheHit={metrics.forecast_cache_hits > 0} />
               <MetricRow label="Inventory" ms={metrics.inventory_ms} />
@@ -394,36 +380,37 @@ export default function Analysis() {
         {/* ── Right panel ── */}
         <div className="lg:col-span-2 space-y-5">
           {isStarted && (
-            <StepIndicator
-              animatedStages={animatedStages}
-              metrics={metrics}
-              isRunning={running}
-            />
+            <StepIndicator animatedStages={animatedStages} metrics={metrics} isRunning={running} />
           )}
 
           {result && (
             <>
+              {isDemo && (
+                <div className="flex items-center gap-2 px-4 py-2 bg-zinc-800/60 border border-zinc-700 rounded-lg text-xs font-mono text-zinc-500">
+                  <Wifi size={12} />
+                  Demo result · backend offline · run the pipeline to see live output
+                </div>
+              )}
               <ReportViewer markdown={result.report_text} runId={result.run_id} />
               {result.recommendations?.length > 0 && (
                 <div>
                   <p className="text-sm font-mono text-zinc-400 mb-3">
-                    Recommendations
-                    <span className="text-zinc-600 ml-2">({result.recommendations.length} SKUs)</span>
+                    Recommendations <span className="text-zinc-600 ml-2">({result.recommendations.length} SKUs)</span>
                   </p>
                   <InventoryTable
                     showSearch={false}
                     data={result.recommendations.map((r) => ({
-                      sku_id:               r.sku_id,
-                      sku_name:             r.sku_name ?? r.sku_id,
-                      category:             r.category ?? "",
-                      warehouse_id:         r.warehouse_id ?? "",
-                      reorder_urgency:      r.reorder_urgency,
-                      current_stock:        r.current_stock,
-                      days_until_stockout:  r.days_until_stockout,
-                      recommended_order_qty:r.recommended_order_qty,
-                      stockout_risk_pct:    r.stockout_risk_pct,
-                      reorder_point:        r.reorder_point,
-                      supplier_id:          r.supplier_id ?? "",
+                      sku_id:                r.sku_id,
+                      sku_name:              r.sku_name ?? r.sku_id,
+                      category:              r.category ?? "",
+                      warehouse_id:          r.warehouse_id ?? "",
+                      reorder_urgency:       r.reorder_urgency,
+                      current_stock:         r.current_stock,
+                      days_until_stockout:   r.days_until_stockout,
+                      recommended_order_qty: r.recommended_order_qty,
+                      stockout_risk_pct:     r.stockout_risk_pct,
+                      reorder_point:         r.reorder_point,
+                      supplier_id:           r.supplier_id ?? "",
                     }))}
                   />
                 </div>
@@ -436,13 +423,9 @@ export default function Analysis() {
               <div className="w-14 h-14 rounded-full bg-[#b5f23d]/10 border border-[#b5f23d]/20 flex items-center justify-center mx-auto mb-4">
                 <Zap size={22} className="text-[#b5f23d]" />
               </div>
-              <p className="text-zinc-300 font-mono text-sm mb-2">
-                Configure and click Run Analysis
-              </p>
+              <p className="text-zinc-300 font-mono text-sm mb-2">Configure and click Run Analysis</p>
               <p className="text-zinc-600 font-mono text-xs max-w-xs mx-auto leading-relaxed">
-                4-stage pipeline: XGBoost demand forecasting → inventory
-                optimization (EOQ · ROP) → ChromaDB RAG retrieval →
-                Groq LLM executive report
+                4-stage pipeline: XGBoost demand forecasting → inventory optimization (EOQ · ROP) → ChromaDB RAG retrieval → Groq LLM executive report
               </p>
             </div>
           )}

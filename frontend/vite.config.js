@@ -20,6 +20,7 @@ export default defineConfig({
   },
 
   server: {
+    host: true,
     proxy: {
       // Dev only: proxy /api/* → backend at localhost:8000
       "/api": {

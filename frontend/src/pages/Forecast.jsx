@@ -1,17 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api/client.js";
+import SNAPSHOT from "../data/snapshot.json";
 import ForecastChart from "../components/ForecastChart.jsx";
 import UrgencyBadge from "../components/UrgencyBadge.jsx";
-import { Search, TrendingUp, AlertCircle, ExternalLink } from "lucide-react";
+import { Search, TrendingUp } from "lucide-react";
+
+// Build sku→detail lookup once from snapshot
+const SKU_DETAIL = Object.fromEntries(SNAPSHOT.inventory.map((r) => [r.sku_id, r]));
 
 function Stat({ label, value, sub, highlight = false }) {
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
       <p className="text-xs font-mono text-zinc-600 uppercase tracking-wider mb-1">{label}</p>
-      <p className={`text-xl font-mono font-bold ${highlight ? "text-[#b5f23d]" : "text-zinc-200"}`}>
-        {value}
-      </p>
+      <p className={`text-xl font-mono font-bold ${highlight ? "text-[#b5f23d]" : "text-zinc-200"}`}>{value}</p>
       {sub && <p className="text-xs text-zinc-600 mt-0.5">{sub}</p>}
     </div>
   );
@@ -19,34 +21,32 @@ function Stat({ label, value, sub, highlight = false }) {
 
 export default function Forecast() {
   const [params] = useSearchParams();
-  const [skuId, setSkuId] = useState(params.get("sku") || "SKU_0001");
-  const [input, setInput] = useState(params.get("sku") || "SKU_0001");
-  const [history, setHistory] = useState([]);
-  const [forecast, setForecast] = useState(null);
-  const [detail, setDetail] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const defaultSku = params.get("sku") || "SKU_0001";
 
-  const load = (id) => {
-    setLoading(true);
-    setError(null);
-    Promise.all([
-      api.getSkuHistory(id, 30),
-      api.forecastSku(id, 7),
-      api.getSkuDetail(id),
-    ])
-      .then(([h, f, d]) => {
-        setHistory(h);
-        setForecast(f);
-        setDetail(d);
-      })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  };
+  const [skuId,   setSkuId]   = useState(defaultSku);
+  const [input,   setInput]   = useState(defaultSku);
+  // Initialise directly from snapshot — zero loading time
+  const [forecast, setForecast] = useState(() => SNAPSHOT.forecasts[defaultSku] ?? null);
+  const [detail,   setDetail]   = useState(() => SKU_DETAIL[defaultSku] ?? null);
+  const [history,  setHistory]  = useState([]);
+  const [histLoading, setHistLoading] = useState(false);
 
+  // Load history chart data from backend (background — stats already visible)
+  const loadHistory = useCallback((id) => {
+    setHistLoading(true);
+    setHistory([]);
+    api.getSkuHistory(id, 30)
+      .then(setHistory)
+      .catch(() => {})
+      .finally(() => setHistLoading(false));
+  }, []);
+
+  // When SKU changes: immediately show precomputed data, fetch chart in background
   useEffect(() => {
-    load(skuId);
-  }, [skuId]);
+    setForecast(SNAPSHOT.forecasts[skuId] ?? null);
+    setDetail(SKU_DETAIL[skuId] ?? null);
+    loadHistory(skuId);
+  }, [skuId, loadHistory]);
 
   const onSearch = (e) => {
     e.preventDefault();
@@ -54,18 +54,13 @@ export default function Forecast() {
     if (id) setSkuId(id);
   };
 
-  const mapeColor =
-    forecast?.mape_estimate == null
-      ? "text-zinc-500"
-      : forecast.mape_estimate > 20
-      ? "text-amber-400"
-      : "text-[#b5f23d]";
-
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-xl font-mono font-semibold">Demand Forecast</h1>
-        <p className="text-xs text-zinc-600 mt-0.5">30-day sales history + 7-day XGBoost forecast with 80% confidence interval</p>
+        <p className="text-xs text-zinc-600 mt-0.5">
+          30-day sales history + 7-day XGBoost forecast with 80% confidence interval
+        </p>
       </div>
 
       <form onSubmit={onSearch} className="flex gap-2 mb-6">
@@ -86,33 +81,7 @@ export default function Forecast() {
         </button>
       </form>
 
-      {error && (
-        <div className="bg-red-950/50 border border-red-800 rounded-lg p-4 mb-6 flex items-start gap-3">
-          <AlertCircle size={14} className="text-red-400 mt-0.5 shrink-0" />
-          <div>
-            <p className="font-mono text-sm text-red-400">{error}</p>
-            {error.includes("VITE_API_URL") && (
-              <p className="text-xs text-red-500 mt-1">
-                Go to Vercel → Project → Settings → Environment Variables,
-                add <code className="bg-red-900/40 px-1 rounded">VITE_API_URL</code> = your Render URL, then redeploy.
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {loading && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="skeleton h-24 rounded-lg" />
-            ))}
-          </div>
-          <div className="skeleton h-72 rounded-lg" />
-        </div>
-      )}
-
-      {!loading && forecast && detail && (
+      {forecast && detail ? (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <Stat
@@ -126,25 +95,24 @@ export default function Forecast() {
               value={detail.current_stock?.toFixed(0)}
               sub={`${detail.days_until_stockout?.toFixed(1)} days supply`}
             />
-            <Stat
-              label="Reorder Point"
-              value={detail.reorder_point?.toFixed(0)}
-              sub="units (ROP)"
-            />
+            <Stat label="Reorder Point" value={detail.reorder_point?.toFixed(0)} sub="units (ROP)" />
             <Stat
               label="Model Accuracy"
-              value={
-                forecast.mape_estimate != null
-                  ? `${forecast.mape_estimate.toFixed(1)}% MAPE`
-                  : "—"
-              }
+              value={forecast.mape_estimate != null ? `${forecast.mape_estimate.toFixed(1)}% MAPE` : "—"}
               sub={`${forecast.confidence_pct}% confidence interval`}
             />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-zinc-900 border border-zinc-800 rounded-lg p-5">
-              <ForecastChart history={history} forecast={forecast} skuId={skuId} />
+              {histLoading && history.length === 0 ? (
+                <div>
+                  <p className="text-sm font-mono text-zinc-400 mb-4">{skuId} — 30d History</p>
+                  <div className="skeleton h-56 w-full rounded" />
+                </div>
+              ) : (
+                <ForecastChart history={history} forecast={forecast} skuId={skuId} />
+              )}
             </div>
 
             <div className="space-y-4">
@@ -164,11 +132,9 @@ export default function Forecast() {
                   ].map(([lbl, val]) => (
                     <div key={lbl} className="flex justify-between items-center">
                       <span className="text-zinc-600 text-xs">{lbl}</span>
-                      {typeof val === "string" ? (
-                        <span className="font-mono text-zinc-300 text-xs">{val}</span>
-                      ) : (
-                        val
-                      )}
+                      {typeof val === "string"
+                        ? <span className="font-mono text-zinc-300 text-xs">{val}</span>
+                        : val}
                     </div>
                   ))}
                 </div>
@@ -182,15 +148,11 @@ export default function Forecast() {
                   <div className="space-y-2">
                     {forecast.top_features.map((f) => (
                       <div key={f.feature} className="flex items-center gap-2">
-                        <p className="text-xs font-mono text-zinc-400 flex-1 truncate">
-                          {f.feature}
-                        </p>
+                        <p className="text-xs font-mono text-zinc-400 flex-1 truncate">{f.feature}</p>
                         <div className="w-20 h-1.5 bg-zinc-800 rounded-full overflow-hidden shrink-0">
                           <div
                             className="h-full bg-[#b5f23d] rounded-full"
-                            style={{
-                              width: `${(f.importance / (forecast.top_features[0]?.importance || 1)) * 100}%`,
-                            }}
+                            style={{ width: `${(f.importance / (forecast.top_features[0]?.importance || 1)) * 100}%` }}
                           />
                         </div>
                       </div>
@@ -201,9 +163,7 @@ export default function Forecast() {
             </div>
           </div>
         </>
-      )}
-
-      {!loading && !forecast && !error && (
+      ) : (
         <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-16 text-center">
           <TrendingUp size={32} className="text-zinc-700 mx-auto mb-3" />
           <p className="text-zinc-500 font-mono text-sm">Enter a SKU ID to view its forecast</p>

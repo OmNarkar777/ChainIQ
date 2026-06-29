@@ -1,26 +1,32 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, clearCache } from "../api/client.js";
+import SNAPSHOT from "../data/snapshot.json";
 import InventoryTable from "../components/InventoryTable.jsx";
-import { RefreshCw, AlertCircle } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 
+// Renders instantly from precomputed snapshot; silently refreshes from live backend.
 export default function Inventory() {
-  const [skus, setSkus]       = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState(null);
+  const [skus,       setSkus]       = useState(SNAPSHOT.inventory);
+  const [refreshing, setRefreshing] = useState(false);
+  const [liveTs,     setLiveTs]     = useState(null);
   const navigate = useNavigate();
 
-  const load = (bust = false) => {
-    if (bust) clearCache();
-    setLoading(true);
-    setError(null);
+  // Background refresh — show live data when backend is available
+  useEffect(() => {
     api.getAllSkus()
-      .then(setSkus)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  };
+      .then((data) => { setSkus(data); setLiveTs(new Date()); })
+      .catch(() => {});
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  const refresh = () => {
+    setRefreshing(true);
+    clearCache();
+    api.getAllSkus()
+      .then((data) => { setSkus(data); setLiveTs(new Date()); })
+      .catch(() => {})
+      .finally(() => setRefreshing(false));
+  };
 
   return (
     <div>
@@ -28,44 +34,26 @@ export default function Inventory() {
         <div>
           <h1 className="text-xl font-mono font-semibold">Inventory</h1>
           <p className="text-xs text-zinc-600 mt-0.5">
-            {loading ? "Loading…" : `${skus.length} SKUs tracked`}
+            {skus.length} SKUs tracked
+            {liveTs
+              ? ` · Live ${liveTs.toLocaleTimeString()}`
+              : ` · Snapshot ${new Date(SNAPSHOT.generatedAt).toLocaleDateString()}`}
           </p>
         </div>
         <button
-          onClick={() => load(true)}
-          className="flex items-center gap-2 text-xs font-mono text-zinc-400 hover:text-[#b5f23d] border border-zinc-700 hover:border-[#b5f23d]/50 px-3 py-1.5 rounded transition-all"
+          onClick={refresh}
+          disabled={refreshing}
+          className="flex items-center gap-2 text-xs font-mono text-zinc-400 hover:text-[#b5f23d] border border-zinc-700 hover:border-[#b5f23d]/50 px-3 py-1.5 rounded transition-all disabled:opacity-50"
         >
-          <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+          <RefreshCw size={12} className={refreshing ? "animate-spin" : ""} />
           Refresh
         </button>
       </div>
 
-      {error && (
-        <div className="bg-red-950/50 border border-red-800 rounded-lg p-4 mb-6 flex items-start gap-2">
-          <AlertCircle size={14} className="text-red-400 mt-0.5 shrink-0" />
-          <div>
-            <p className="text-red-400 font-mono text-sm">{error}</p>
-            {error.includes("starting up") && (
-              <p className="text-red-500 text-xs mt-1">
-                The backend is waking up on Render. Wait 30–60 seconds and click Refresh.
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {loading ? (
-        <div className="space-y-2">
-          {[...Array(8)].map((_, i) => (
-            <div key={i} className="skeleton h-12 w-full rounded" />
-          ))}
-        </div>
-      ) : (
-        <InventoryTable
-          data={skus}
-          onRowClick={(row) => navigate(`/forecast?sku=${row.sku_id}`)}
-        />
-      )}
+      <InventoryTable
+        data={skus}
+        onRowClick={(row) => navigate(`/forecast?sku=${row.sku_id}`)}
+      />
     </div>
   );
 }

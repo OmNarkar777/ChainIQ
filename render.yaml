@@ -1,13 +1,15 @@
 services:
   - type: web
     name: chainiq-api
-    runtime: docker
-    dockerfilePath: ./Dockerfile
+    runtime: python
+    pythonVersion: "3.11"
     plan: free
+    buildCommand: pip install -r requirements.txt && python scripts/build_train.py && python scripts/build_ingest.py
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /health
     envVars:
       - key: GROQ_API_KEY
-        sync: false          # set this secret in the Render dashboard
+        sync: false          # set in Render dashboard → Environment
       - key: GROQ_MODEL
         value: llama-3.3-70b-versatile
       - key: CHROMA_PERSIST_DIR
@@ -19,7 +21,4 @@ services:
       - key: LOG_LEVEL
         value: INFO
       - key: CORS_ORIGINS
-        # After deploying your frontend, update this to your Vercel/Netlify URL.
-        # Example: https://chainiq.vercel.app
-        # Use * only during initial setup or if the frontend is on the same domain.
         value: "*"
