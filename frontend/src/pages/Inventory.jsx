@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../api/client.js";
+import { api, clearCache } from "../api/client.js";
 import InventoryTable from "../components/InventoryTable.jsx";
 import { RefreshCw, AlertCircle } from "lucide-react";
 
@@ -10,7 +10,8 @@ export default function Inventory() {
   const [error, setError]     = useState(null);
   const navigate = useNavigate();
 
-  const load = () => {
+  const load = (bust = false) => {
+    if (bust) clearCache();
     setLoading(true);
     setError(null);
     api.getAllSkus()
@@ -31,7 +32,7 @@ export default function Inventory() {
           </p>
         </div>
         <button
-          onClick={load}
+          onClick={() => load(true)}
           className="flex items-center gap-2 text-xs font-mono text-zinc-400 hover:text-[#b5f23d] border border-zinc-700 hover:border-[#b5f23d]/50 px-3 py-1.5 rounded transition-all"
         >
           <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
@@ -42,7 +43,14 @@ export default function Inventory() {
       {error && (
         <div className="bg-red-950/50 border border-red-800 rounded-lg p-4 mb-6 flex items-start gap-2">
           <AlertCircle size={14} className="text-red-400 mt-0.5 shrink-0" />
-          <p className="text-red-400 font-mono text-sm">{error}</p>
+          <div>
+            <p className="text-red-400 font-mono text-sm">{error}</p>
+            {error.includes("starting up") && (
+              <p className="text-red-500 text-xs mt-1">
+                The backend is waking up on Render. Wait 30–60 seconds and click Refresh.
+              </p>
+            )}
+          </div>
         </div>
       )}
 

@@ -65,14 +65,31 @@ def _stage_forecast(sku_ids: list[str]) -> dict:
 
 
 def _stage_inventory(sku_ids: list[str]) -> dict:
-    """Return inventory recommendations from pre-built _sku_records (no pandas)."""
-    from backend.routers.inventory import _get_sku_records
+    """
+    Return inventory recommendations from pre-built _sku_records (no pandas).
 
-    all_recs    = _get_sku_records()
-    sku_set     = set(sku_ids)
-    recs        = [r for r in all_recs if r["sku_id"] in sku_set]
-    critical    = sum(1 for r in recs if r["reorder_urgency"] == "CRITICAL")
-    high        = sum(1 for r in recs if r["reorder_urgency"] == "HIGH")
+    Enriches each record with `predicted_demand_7d` from the prediction cache
+    so the InventoryRecommendationResponse schema is satisfied.
+    """
+    from backend.routers.inventory import _get_sku_records
+    from backend.ml.predictor import _prediction_cache
+
+    all_recs = _get_sku_records()
+    sku_set  = set(sku_ids)
+    recs = []
+    for r in all_recs:
+        if r["sku_id"] not in sku_set:
+            continue
+        rec = dict(r)
+        cached = _prediction_cache.get(r["sku_id"])
+        rec["predicted_demand_7d"] = (
+            round(cached.predicted_units, 1) if cached
+            else round(r["avg_daily_demand"] * 7, 1)
+        )
+        recs.append(rec)
+
+    critical = sum(1 for r in recs if r["reorder_urgency"] == "CRITICAL")
+    high     = sum(1 for r in recs if r["reorder_urgency"] == "HIGH")
     return {"recommendations": recs, "critical": critical, "high": high}
 
 
@@ -139,7 +156,9 @@ def _call_groq_sync(recs: list[dict], context: dict) -> str:
     from backend.agents.report_agent import _build_prompt
 
     settings = get_settings()
-    client   = Groq(api_key=settings.groq_api_key)
+    # SDK-level timeout (22s) ensures the thread unblocks even if asyncio
+    # wait_for already cancelled the task at 25s.
+    client   = Groq(api_key=settings.groq_api_key, timeout=22.0)
 
     # Build minimal state dict compatible with _build_prompt
     state = {
@@ -261,7 +280,7 @@ async def _pipeline(sku_ids: list[str], include_rag: bool) -> AsyncIterator[str]
             yield _evt(
                 "rag_complete",
                 chunks=collection_size(),
-                suppliers_retrieved=len(set(context.values()).__class__()),
+                suppliers_retrieved=len(context),
                 duration_ms=int((time.time() - t0) * 1000),
             )
         except Exception as ex:

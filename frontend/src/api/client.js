@@ -5,33 +5,48 @@
 const BASE = import.meta.env.VITE_API_URL ?? "/api";
 
 // ── In-memory TTL cache ───────────────────────────────────────────────────────
-// Eliminates repeat API calls within a TTL window (navigating between pages
-// no longer re-fetches data that was already loaded this session).
+// Shared across all pages — navigating back to a page returns cached data
+// instantly without another Render round-trip.
+//
+// Static-list paths use an exact key; per-SKU paths use prefix matching.
 const _cache = new Map(); // key → { data, expires }
 
 const CACHE_TTL = {
+  // Exact-path keys
   "/inventory/dashboard": 30_000,   // 30 s — summary, analytics, critical SKUs
-  "/inventory/skus":      120_000,  // 2 min — full 300-record list
-  "/inventory/sku-ids":   300_000,  // 5 min — static lightweight list
+  "/inventory/skus":      120_000,  // 2 min — full 300-record list (gzipped ~18 KB)
+  "/inventory/sku-ids":   300_000,  // 5 min — static lightweight list (~5 KB)
   "/inventory/summary":   30_000,
   "/inventory/critical":  30_000,
   "/inventory/analytics": 60_000,
   "/inventory/suppliers": 60_000,
   "/health/meta":         60_000,
   "/agent/runs":          10_000,   // runs change frequently
+
+  // Prefix keys (paths starting with these get the associated TTL)
+  "/forecast/sku/":        60_000,  // per-SKU forecast (warmed cache = instant)
+  "/inventory/skus/":      60_000,  // per-SKU detail + history
 };
 
-function _cacheKey(path) { return path; }
+function _getTtl(path) {
+  // Exact match first
+  if (CACHE_TTL[path] !== undefined) return CACHE_TTL[path];
+  // Prefix match for dynamic per-resource paths
+  for (const [prefix, ttl] of Object.entries(CACHE_TTL)) {
+    if (prefix.endsWith("/") && path.startsWith(prefix)) return ttl;
+  }
+  return 0; // not cacheable
+}
 
 function _getCached(path) {
-  const entry = _cache.get(_cacheKey(path));
+  const entry = _cache.get(path);
   if (entry && Date.now() < entry.expires) return entry.data;
   return null;
 }
 
 function _setCached(path, data) {
-  const ttl = CACHE_TTL[path];
-  if (ttl) _cache.set(_cacheKey(path), { data, expires: Date.now() + ttl });
+  const ttl = _getTtl(path);
+  if (ttl > 0) _cache.set(path, { data, expires: Date.now() + ttl });
 }
 
 // ── Core fetch wrapper ────────────────────────────────────────────────────────
@@ -41,7 +56,7 @@ async function req(path, opts = {}) {
   const method = (opts.method ?? "GET").toUpperCase();
   const headers = { ...opts.headers };
 
-  // Use cache only for cacheable GET requests
+  // Use cache only for cacheable GET requests (unless caller says skipCache)
   if (method === "GET" && !opts.skipCache) {
     const cached = _getCached(path);
     if (cached !== null) return cached;
@@ -51,10 +66,29 @@ async function req(path, opts = {}) {
     headers["Content-Type"] = "application/json";
   }
 
+  // 15-second timeout on all REST requests.
+  // Render free tier cold starts take 30-60s, but with warmup the backend
+  // responds in <1s once hot. 15s gives comfortable headroom for warm
+  // backends while providing a clear error instead of infinite hang on
+  // cold starts.
+  let timeoutId;
+  const timeoutCtrl = new AbortController();
+  timeoutId = setTimeout(() => timeoutCtrl.abort(), 15_000);
+
+  // Merge with any existing signal from opts
+  const signal = opts.signal ?? timeoutCtrl.signal;
+
   let r;
   try {
-    r = await fetch(url, { ...opts, method, headers });
+    r = await fetch(url, { ...opts, method, headers, signal });
   } catch (networkErr) {
+    clearTimeout(timeoutId);
+    if (networkErr.name === "AbortError") {
+      throw new Error(
+        `Request timed out after 15s — the backend may be starting up (Render cold start). ` +
+        `Please wait 30–60 seconds and try again.`
+      );
+    }
     throw new Error(
       `Network error — cannot reach the API at ${BASE}. ` +
         (BASE === "/api"
@@ -62,6 +96,7 @@ async function req(path, opts = {}) {
           : "Check that the backend is running and CORS_ORIGINS includes this origin.")
     );
   }
+  clearTimeout(timeoutId);
 
   // Detect HTML responses: Vercel SPA fallback returns index.html with status
   // 200 when VITE_API_URL is not set and requests hit /api/* on the frontend
@@ -72,7 +107,7 @@ async function req(path, opts = {}) {
       BASE === "/api"
         ? "API unreachable: VITE_API_URL is not configured. " +
             "Set it to your Render backend URL in Vercel dashboard and redeploy."
-        : `Unexpected HTML from ${BASE}. The service may be starting up (cold start). Retry in 30 s.`
+        : `Unexpected HTML from ${BASE}. The backend may be starting up. Retry in 30 s.`
     );
   }
 
@@ -100,7 +135,7 @@ export const api = {
   getInventorySummary: ()         => req("/inventory/summary"),
   getCriticalSkus:     ()         => req("/inventory/critical"),
   getAllSkus:          ()         => req("/inventory/skus"),
-  getSkuIds:           ()         => req("/inventory/sku-ids"),  // lightweight: {sku_id, sku_name, category}
+  getSkuIds:           ()         => req("/inventory/sku-ids"),
   getSkuDetail:        (id)       => req(`/inventory/skus/${id}`),
   getSkuHistory:       (id, d=30) => req(`/inventory/skus/${id}/history?days=${d}`),
   getAnalytics:        ()         => req("/inventory/analytics"),
@@ -118,12 +153,12 @@ export const api = {
 
 // ── Cache utilities ────────────────────────────────────────────────────────────
 
-/** Invalidate a specific cached path (e.g. after a mutation). */
+/** Invalidate a specific cached path. */
 export function invalidateCache(path) {
-  _cache.delete(_cacheKey(path));
+  _cache.delete(path);
 }
 
-/** Clear the entire cache (e.g. on manual refresh). */
+/** Clear the entire cache (e.g. on manual Refresh click). */
 export function clearCache() {
   _cache.clear();
 }

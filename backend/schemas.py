@@ -54,7 +54,7 @@ class InventoryRecommendationResponse(BaseModel):
     reorder_urgency:       ReorderUrgency
     stockout_risk_pct:     float
     days_until_stockout:   float
-    predicted_demand_7d:   float
+    predicted_demand_7d:   Optional[float] = None
 
     # Enrichment fields (populated by inventory_agent, missing in older data)
     category:     Optional[str]   = None
