@@ -112,7 +112,7 @@ export default function Forecast() {
                   <div className="skeleton h-56 w-full rounded" />
                 </div>
               ) : (
-                <ForecastChart history={history} forecast={forecast} skuId={skuId} />
+                <ForecastChart history={history} forecast={forecast} skuId={skuId} detail={detail} />
               )}
             </div>
 
