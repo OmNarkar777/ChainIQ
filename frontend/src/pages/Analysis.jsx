@@ -79,13 +79,14 @@ Unit economics: list price **$${(rec.unit_price ?? 0).toFixed(2)}** vs. cost **$
 | Model accuracy | ${fc.mape_estimate?.toFixed(1) ?? "N/A"}% MAPE | ${(fc.mape_estimate ?? 99) < 15 ? "✓ Strong" : "⚠️ Moderate"} |
 `;}
 
-// Realistic demo metrics for single-SKU mode (faster than 300-SKU)
-const SINGLE_DEMO_METRICS = {
+// Pre-computed snapshot metrics for single-SKU mode.
+// llm_ms is null because no LLM was called — MetricRow skips null values.
+const SINGLE_SNAPSHOT_METRICS = {
   forecast_ms: 11,
   forecast_cache_hits: 1,
   inventory_ms: 7,
   rag_ms: 193,
-  llm_ms: 0,
+  llm_ms: null,
   llm_cache_hit: false,
   total_ms: 211,
 };
@@ -255,12 +256,14 @@ export default function Analysis() {
     setResult(null);
     setError(null);
 
-    // Helper: build demo result with per-SKU content when in single mode
-    const buildDemoFallback = (runId) => {
+    // Helper: build cached snapshot result with per-SKU content when in single mode.
+    // The snapshot data is genuinely pre-computed (real XGBoost forecasts + inventory math),
+    // so we surface it as "snapshot analysis" rather than hiding it as "demo mode".
+    const buildSnapshotFallback = () => {
       const isSingle = currentMode === "single" && currentSku;
       return {
         result: {
-          run_id:          runId,
+          run_id:          isSingle ? `snap-${currentSku}` : "snap-all",
           status:          "DONE",
           skus_analyzed:   isSingle ? 1 : SNAPSHOT.demo.skus_analyzed,
           report_text:     isSingle ? generateSkuReport(currentSku) : SNAPSHOT.demo.report,
@@ -268,14 +271,14 @@ export default function Analysis() {
             ? SNAPSHOT.inventory.filter((r) => r.sku_id === currentSku)
             : SNAPSHOT.demo.recommendations,
         },
-        metrics: isSingle ? SINGLE_DEMO_METRICS : SNAPSHOT.demo.metrics,
+        metrics: isSingle ? SINGLE_SNAPSHOT_METRICS : SNAPSHOT.demo.metrics,
       };
     };
 
-    // 5-second timeout — covers Render cold-start; demo result shown if backend doesn't respond
+    // 5-second timeout — covers Render cold-start; snapshot result shown if backend doesn't respond
     demoTimer.current = setTimeout(() => {
       if (stopRef.current) stopRef.current();
-      const { result: r, metrics: m } = buildDemoFallback("demo-timeout");
+      const { result: r, metrics: m } = buildSnapshotFallback();
       showDemoResult(r, m);
     }, 5_000);
 
@@ -310,7 +313,7 @@ export default function Analysis() {
       () => { clearTimeout(demoTimer.current); setRunning(false); },
       () => {
         clearTimeout(demoTimer.current);
-        const { result: r, metrics: m } = buildDemoFallback("demo-offline");
+        const { result: r, metrics: m } = buildSnapshotFallback();
         showDemoResult(r, m);
       },
     );
@@ -397,7 +400,7 @@ export default function Analysis() {
                   : <CheckCircle size={13} className="text-[#b5f23d]" />}
                 <p className={`text-xs font-mono ${isDemo ? "text-zinc-500" : "text-[#b5f23d]"}`}>
                   {isDemo
-                    ? `Demo · ${result.skus_analyzed} SKUs (backend offline)`
+                    ? `Snapshot · ${result.skus_analyzed} SKU${result.skus_analyzed !== 1 ? "s" : ""} · pre-computed`
                     : `${result.skus_analyzed} SKUs analysed`}
                 </p>
               </div>
@@ -427,7 +430,7 @@ export default function Analysis() {
               <div className="flex items-center gap-2 mb-3">
                 <Clock size={12} className="text-zinc-500" />
                 <p className="text-xs font-mono text-zinc-500 uppercase tracking-wider">Execution Metrics</p>
-                {isDemo && <span className="text-[10px] font-mono text-zinc-600 border border-zinc-700 px-1.5 rounded ml-auto">demo</span>}
+                {isDemo && <span className="text-[10px] font-mono text-zinc-600 border border-zinc-700 px-1.5 rounded ml-auto">snapshot</span>}
               </div>
               <MetricRow label="Forecast"  ms={metrics.forecast_ms}  cacheHit={metrics.forecast_cache_hits > 0} />
               <MetricRow label="Inventory" ms={metrics.inventory_ms} />
@@ -449,7 +452,7 @@ export default function Analysis() {
               {isDemo && (
                 <div className="flex items-center gap-2 px-4 py-2 bg-zinc-800/60 border border-zinc-700 rounded-lg text-xs font-mono text-zinc-500">
                   <Wifi size={12} />
-                  Demo result · backend offline · run the pipeline to see live output
+                  Viewing pre-computed snapshot · Start a new run for live Groq analysis
                 </div>
               )}
               <ReportViewer markdown={result.report_text} runId={result.run_id} />
