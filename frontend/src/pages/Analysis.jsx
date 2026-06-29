@@ -5,7 +5,7 @@ import StepIndicator from "../components/StepIndicator.jsx";
 import ReportViewer from "../components/ReportViewer.jsx";
 import InventoryTable from "../components/InventoryTable.jsx";
 import {
-  Play, Loader, CheckCircle, AlertCircle,
+  Play, Loader, CheckCircle,
   Brain, Database, Cpu, FileText, ChevronDown, X, Search,
   Zap, Clock, Wifi,
 } from "lucide-react";
@@ -195,29 +195,6 @@ const PIPELINE_STAGES = [
 ];
 
 const ANIM_TIMINGS = { forecast: 150, inventory: 340, rag: 530 };
-
-// Demo replay: animate stages then show precomputed result
-function useDemoReplay(onResult, onMetrics) {
-  return () => {
-    const delays = [
-      [150,  () => {}],
-      [400,  () => {}],
-      [700,  () => {}],
-      [3200, () => {
-        onResult({
-          run_id:          "demo-00000000",
-          status:          "DONE",
-          skus_analyzed:   SNAPSHOT.demo.skus_analyzed,
-          report_text:     SNAPSHOT.demo.report,
-          recommendations: SNAPSHOT.demo.recommendations,
-        });
-        onMetrics(SNAPSHOT.demo.metrics);
-      }],
-    ];
-    const timers = delays.map(([ms, fn]) => setTimeout(fn, ms));
-    return () => timers.forEach(clearTimeout);
-  };
-}
 
 // ── Main component ────────────────────────────────────────────────────────────
 
